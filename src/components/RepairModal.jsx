@@ -94,13 +94,11 @@ export default function RepairModal({ repair, onClose }) {
       const hasStockPiece = Boolean(repair.pieceUsedId);
       const hasExternalPiece = Boolean(!repair.pieceUsedId && repair.pieceName);
 
-      const effectiveAdvance = repair.initialAdvance !== undefined
-        ? Number(repair.initialAdvance)
-        : (repair.status === 'delivered' ? Math.max(0, (Number(repair.totalPrice) || 0) - (Number(repair.remainingPaid) || 0)) : (Number(repair.advancePaid) || 0));
-
-      const effectiveRemaining = repair.remainingPaid !== undefined && repair.status === 'delivered'
-        ? Number(repair.remainingPaid)
-        : (repair.remainingDue !== undefined ? Number(repair.remainingDue) : Math.max(0, (Number(repair.totalPrice) || 0) - effectiveAdvance));
+      const totalPrice = Number(repair.totalPrice) || 0;
+      const advancePaid = Number(repair.advancePaid !== undefined ? repair.advancePaid : (repair.initialAdvance || 0));
+      const remainingDue = repair.remainingDue !== undefined
+        ? Number(repair.remainingDue)
+        : Math.max(0, totalPrice - advancePaid);
 
       const rawIssue = repair.issueDescription || repair.problemDescription || repair.problem || repair.diagnostic || repair.description || '';
       const rawDate = repair.createdAt || repair.date || new Date().toISOString();
@@ -114,11 +112,11 @@ export default function RepairModal({ repair, onClose }) {
         issueDescription: rawIssue,
         pieceUsedId: repair.pieceUsedId || '',
         pieceName: repair.pieceName || '',
-        pieceCost: repair.pieceCost || 0,
-        laborCost: repair.laborCost !== undefined ? repair.laborCost : 0,
-        totalPrice: repair.totalPrice !== undefined ? repair.totalPrice : 0,
-        advancePaid: effectiveAdvance,
-        remainingDue: effectiveRemaining,
+        pieceCost: Number(repair.pieceCost) || 0,
+        laborCost: repair.laborCost !== undefined ? Number(repair.laborCost) : 0,
+        totalPrice: totalPrice,
+        advancePaid: advancePaid,
+        remainingDue: remainingDue,
         deductStock: repair.deductStock !== undefined ? repair.deductStock : true,
         status: repair.status || 'received',
         priority: repair.priority || 'normal',

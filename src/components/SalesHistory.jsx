@@ -162,10 +162,9 @@ export default function SalesHistory({ onEditRepair }) {
     (repairs || []).forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
       const effectiveDate = rep.deliveredAt || rep.createdAt;
-      const advance = Number(rep.advancePaid) || 0;
       const totalAmount = Number(rep.totalPrice) || 0;
-      const amountPaid = isDelivered ? totalAmount : advance;
-      const remainingDue = isDelivered ? 0 : (Number(rep.remainingDue) || 0);
+      const remainingDue = rep.remainingDue !== undefined ? Number(rep.remainingDue) : (isDelivered ? 0 : Math.max(0, totalAmount - (Number(rep.advancePaid) || 0)));
+      const amountPaid = rep.advancePaid !== undefined ? Number(rep.advancePaid) : Math.max(0, totalAmount - remainingDue);
 
       const baseLabor = Number(rep.laborCost) > 0
         ? Number(rep.laborCost)
@@ -174,7 +173,7 @@ export default function SalesHistory({ onEditRepair }) {
       // Realized profit: if delivered -> full labor gain; if advance paid -> advance amount
       const profit = isDelivered
         ? (baseLabor > 0 ? baseLabor : totalAmount)
-        : (advance > 0 ? advance : (baseLabor > 0 ? baseLabor : 0));
+        : (amountPaid > 0 ? amountPaid : (baseLabor > 0 ? baseLabor : 0));
 
       list.push({
         id: `repair-${rep.id}`,
@@ -192,7 +191,7 @@ export default function SalesHistory({ onEditRepair }) {
         amountPaid,
         remainingDue,
         profit,
-        paymentType: isDelivered ? 'cash' : (advance > 0 ? 'partial' : 'credit'),
+        paymentType: remainingDue === 0 ? 'cash' : (amountPaid > 0 ? 'partial' : 'credit'),
         status: rep.status,
         raw: rep,
       });
