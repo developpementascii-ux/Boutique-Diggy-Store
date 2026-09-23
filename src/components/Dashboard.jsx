@@ -407,15 +407,50 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
       }
     });
 
-    // Calculate granted credits in this period (unpaid customer balances)
-    const salesRemainingCredit = periodSales.reduce((sum, s) => sum + (Number(s.remainingCredit) || 0), 0);
-    const repairsRemainingCredit = repairs
-      .filter((r) => isInPeriod(r.createdAt) && r.status !== 'delivered')
-      .reduce((sum, r) => sum + (Number(r.remainingDue) || 0), 0);
-    const totalGrantedCredit = salesRemainingCredit + repairsRemainingCredit;
+    // Calculate granted credits in this period (unpaid customer balances & new debts)
+    const salesRemainingCredit = periodSales.reduce((sum, s) => sum + (Number(s.remainingCredit || s.remainingDebt || 0)), 0);
+
+    const seenRepairDebtIds = new Set();
+    let repairsRemainingCredit = 0;
+    let repairsRemainingCount = 0;
+    repairs.forEach((r) => {
+      const inPeriod = isInPeriod(r.deliveredAt || r.createdAt);
+      if (inPeriod && Number(r.remainingDue) > 0 && !seenRepairDebtIds.has(r.id)) {
+        seenRepairDebtIds.add(r.id);
+        repairsRemainingCredit += Number(r.remainingDue);
+        repairsRemainingCount += 1;
+      }
+    });
+
+    let manualClientCredit = 0;
+    let manualClientCreditCount = 0;
+    const seenTrxIds = new Set();
+    clients.forEach((c) => {
+      if (Array.isArray(c.history)) {
+        c.history.forEach((trx) => {
+          const isDebt = Number(trx.amount) > 0 || trx.type === 'sale_credit' || trx.type === 'repair_credit' || trx.type === 'manual_debt';
+          if (isDebt && isInPeriod(trx.date)) {
+            const ref = trx.referenceId;
+            const alreadyInSales = ref && periodSales.some((s) => s.id === ref || s.invoiceNumber === ref);
+            const alreadyInRepairs = ref && repairs.some((r) => (r.id === ref || r.ticketNumber === ref) && isInPeriod(r.deliveredAt || r.createdAt));
+            if (!alreadyInSales && !alreadyInRepairs) {
+              const trxKey = trx.id || `${c.id}-${trx.date}-${trx.amount}`;
+              if (!seenTrxIds.has(trxKey)) {
+                seenTrxIds.add(trxKey);
+                manualClientCredit += Number(trx.amount) || 0;
+                manualClientCreditCount += 1;
+              }
+            }
+          }
+        });
+      }
+    });
+
+    const totalGrantedCredit = salesRemainingCredit + repairsRemainingCredit + manualClientCredit;
     const grantedCreditCount =
-      periodSales.filter((s) => Number(s.remainingCredit) > 0).length +
-      repairs.filter((r) => isInPeriod(r.createdAt) && r.status !== 'delivered' && Number(r.remainingDue) > 0).length;
+      periodSales.filter((s) => Number(s.remainingCredit || s.remainingDebt || 0) > 0).length +
+      repairsRemainingCount +
+      manualClientCreditCount;
 
     const chartPoints = Object.values(dailyMap);
 
