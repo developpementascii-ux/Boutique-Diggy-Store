@@ -216,65 +216,72 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
       }
     });
 
-    // Calculate workshop repair revenue and profit for the period:
-    // 1. Initial advances paid during this period (upon ticket creation)
-    // 2. Remaining balance payments collected during this period (upon delivery/closure)
+    // Calculate workshop repair revenue and profit for the period
     let repairsRev = 0;
     let repairsProf = 0;
     let periodRepairOperationsCount = 0;
 
     repairs.forEach((rep) => {
-      const createdInPeriod = isInPeriod(rep.createdAt);
       const isDelivered = rep.status === 'delivered';
-      const deliveredInPeriod = isDelivered && isInPeriod(rep.deliveredAt || (createdInPeriod ? null : rep.createdAt));
+      const effectiveDate = rep.deliveredAt || rep.createdAt;
+      const createdInPeriod = isInPeriod(rep.createdAt);
+      const deliveredInPeriod = isDelivered && isInPeriod(rep.deliveredAt);
 
+      const totalAmount = Number(rep.totalPrice) || 0;
+      const advance = Number(rep.advancePaid) || 0;
       const initialAdv = rep.initialAdvance !== undefined
         ? Number(rep.initialAdvance)
-        : (isDelivered ? Math.max(0, (Number(rep.totalPrice) || 0) - (Number(rep.remainingPaid) || 0)) : (Number(rep.advancePaid) || 0));
+        : (isDelivered ? Math.max(0, totalAmount - (Number(rep.remainingPaid) || 0)) : advance);
 
       const remainingSettled = rep.remainingPaid !== undefined
         ? Number(rep.remainingPaid)
-        : Math.max(0, (Number(rep.totalPrice) || 0) - initialAdv);
+        : Math.max(0, totalAmount - initialAdv);
 
       const baseLabor = Number(rep.laborCost) > 0
         ? Number(rep.laborCost)
-        : Math.max(0, (Number(rep.totalPrice) || 0) - (Number(rep.pieceCost) || 0));
+        : Math.max(0, totalAmount - (Number(rep.pieceCost) || 0));
 
-      let repairPeriodInflow = 0;
-      let repairPeriodProfit = 0;
+      const profit = isDelivered
+        ? (baseLabor > 0 ? baseLabor : totalAmount)
+        : (advance > 0 ? advance : (baseLabor > 0 ? baseLabor : 0));
 
-      if (createdInPeriod) {
-        repairPeriodInflow += initialAdv;
-        const advProfit = isDelivered
-          ? (baseLabor > 0 ? Math.min(baseLabor, initialAdv) : initialAdv)
-          : (initialAdv > 0 ? initialAdv : 0);
-        repairPeriodProfit += advProfit;
-      }
+      if (isInPeriod(effectiveDate) || createdInPeriod || deliveredInPeriod) {
+        let rRev = 0;
+        let rProf = 0;
 
-      if (deliveredInPeriod) {
-        repairPeriodInflow += remainingSettled;
-        const remProfit = Math.max(0, (baseLabor > 0 ? baseLabor : Number(rep.totalPrice) || 0) - (createdInPeriod ? (isDelivered ? Math.min(baseLabor, initialAdv) : initialAdv) : 0));
-        repairPeriodProfit += remProfit;
-      }
+        if (createdInPeriod && deliveredInPeriod) {
+          rRev = totalAmount > 0 ? totalAmount : (initialAdv + remainingSettled);
+          rProf = profit;
+        } else if (deliveredInPeriod) {
+          rRev = remainingSettled > 0 ? remainingSettled : totalAmount;
+          rProf = Math.max(0, profit - (initialAdv > 0 ? Math.min(profit, initialAdv) : 0));
+        } else if (createdInPeriod) {
+          rRev = initialAdv > 0 ? initialAdv : totalAmount;
+          rProf = isDelivered ? Math.min(profit, initialAdv) : (initialAdv > 0 ? initialAdv : 0);
+        } else if (isInPeriod(effectiveDate)) {
+          rRev = totalAmount > 0 ? totalAmount : (initialAdv + remainingSettled);
+          rProf = profit;
+        }
 
-      if (createdInPeriod || deliveredInPeriod) {
-        repairsRev += repairPeriodInflow;
-        repairsProf += repairPeriodProfit;
-        periodRepairOperationsCount += 1;
+        if (rRev > 0 || rProf > 0 || isInPeriod(effectiveDate)) {
+          repairsRev += rRev;
+          repairsProf += rProf;
+          periodRepairOperationsCount += 1;
+        }
       }
     });
 
-    // Calculate totals including counter sales and workshop repairs
+    // Calculate totals including counter sales, workshop repairs, and recovered customer debts
     const salesRev = periodSales.reduce((sum, s) => sum + (Number(s.totalAmount) || 0), 0);
-    const totalRev = salesRev + repairsRev;
+    const totalRev = salesRev + repairsRev + collectedCredit;
 
     const salesProf = periodSales.reduce((sum, s) => sum + (Number(s.totalProfit) || 0), 0);
     const totalProf = salesProf + repairsProf;
 
     const totalExp = periodExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-    const salesCount = periodSales.length + periodRepairOperationsCount;
+    const salesCount = periodSales.length + periodRepairOperationsCount + collectedCreditCount;
     const avgTicket = salesCount > 0 ? totalRev / salesCount : 0;
-    const marginRate = totalRev > 0 ? Math.round((totalProf / totalRev) * 100) : 0;
+    const marginRate = totalRev > 0 ? Math.min(100, Math.max(0, Math.round((totalProf / totalRev) * 100))) : 0;
 
     // Daily aggregated buckets for Chart
     const getLocalDateKey = (d) => {
@@ -382,6 +389,21 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
           const remProfit = Math.max(0, (baseLabor > 0 ? baseLabor : Number(rep.totalPrice) || 0) - (createdSameDay ? Math.min(baseLabor, initialAdv) : 0));
           dailyMap[kDeliv].profit += remProfit;
         }
+      }
+    });
+
+    // Populate client credit settlements onto chart days
+    clients.forEach((c) => {
+      if (Array.isArray(c.history)) {
+        c.history.forEach((trx) => {
+          const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
+          if (isPayment && trx.date) {
+            const kTrx = getLocalDateKey(trx.date);
+            if (dailyMap[kTrx]) {
+              dailyMap[kTrx].sales += Math.abs(Number(trx.amount) || 0);
+            }
+          }
+        });
       }
     });
 
