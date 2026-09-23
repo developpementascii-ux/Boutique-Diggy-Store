@@ -229,7 +229,9 @@ export default function CashSessions() {
       const rec = recordsMap[dateKey];
       if (rec.salesList.some((item) => item.id === s.id)) return;
 
-      const amount = Number(s.amountPaid) || Number(s.totalAmount) || 0;
+      const amount = s.amountPaid !== undefined && s.amountPaid !== null
+        ? Number(s.amountPaid)
+        : Math.max(0, (Number(s.totalAmount) || 0) - (Number(s.remainingCredit) || 0));
       const profit = Number(s.totalProfit) || 0;
       const cost = Number(s.totalCost) || (amount - profit);
 

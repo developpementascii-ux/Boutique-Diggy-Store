@@ -262,9 +262,9 @@ export default function SalesHistory({ onEditRepair }) {
     });
   }, [allOperations, searchQuery, periodBounds, typeFilter, paymentFilter]);
 
-  // Dynamic KPI Summary calculated strictly from current active filter results
+  // Dynamic KPI Summary calculated strictly from current active filter results (excluding granted credit)
   const totalVolume = useMemo(() => {
-    return filteredOperations.reduce((acc, op) => acc + (Number(op.totalAmount) || 0), 0);
+    return filteredOperations.reduce((acc, op) => acc + (Number(op.amountPaid) || 0), 0);
   }, [filteredOperations]);
 
   const totalCollected = useMemo(() => {

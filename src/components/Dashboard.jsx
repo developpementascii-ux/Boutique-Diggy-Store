@@ -245,21 +245,23 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
         ? (baseLabor > 0 ? baseLabor : totalAmount)
         : (advance > 0 ? advance : (baseLabor > 0 ? baseLabor : 0));
 
+      const paidRepairAmount = Math.max(0, totalAmount - (Number(rep.remainingDue) || 0));
+
       if (isInPeriod(effectiveDate) || createdInPeriod || deliveredInPeriod) {
         let rRev = 0;
         let rProf = 0;
 
         if (createdInPeriod && deliveredInPeriod) {
-          rRev = totalAmount > 0 ? totalAmount : (initialAdv + remainingSettled);
+          rRev = paidRepairAmount;
           rProf = profit;
         } else if (deliveredInPeriod) {
-          rRev = remainingSettled > 0 ? remainingSettled : totalAmount;
+          rRev = remainingSettled > 0 ? remainingSettled : paidRepairAmount;
           rProf = Math.max(0, profit - (initialAdv > 0 ? Math.min(profit, initialAdv) : 0));
         } else if (createdInPeriod) {
-          rRev = initialAdv > 0 ? initialAdv : totalAmount;
+          rRev = initialAdv;
           rProf = isDelivered ? Math.min(profit, initialAdv) : (initialAdv > 0 ? initialAdv : 0);
         } else if (isInPeriod(effectiveDate)) {
-          rRev = totalAmount > 0 ? totalAmount : (initialAdv + remainingSettled);
+          rRev = paidRepairAmount;
           rProf = profit;
         }
 
@@ -271,8 +273,13 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
       }
     });
 
-    // Calculate totals including counter sales, workshop repairs, and recovered customer debts
-    const salesRev = periodSales.reduce((sum, s) => sum + (Number(s.totalAmount) || 0), 0);
+    // Calculate totals including counter sales, workshop repairs, and recovered customer debts (excluding granted credit)
+    const salesRev = periodSales.reduce((sum, s) => {
+      const paid = s.amountPaid !== undefined && s.amountPaid !== null
+        ? Number(s.amountPaid)
+        : Math.max(0, (Number(s.totalAmount) || 0) - (Number(s.remainingCredit) || 0));
+      return sum + (paid || 0);
+    }, 0);
     const totalRev = salesRev + repairsRev + collectedCredit;
 
     const salesProf = periodSales.reduce((sum, s) => sum + (Number(s.totalProfit) || 0), 0);
@@ -338,7 +345,10 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
       if (!s.date) return;
       const k = getLocalDateKey(s.date);
       if (dailyMap[k]) {
-        dailyMap[k].sales += Number(s.totalAmount) || 0;
+        const paid = s.amountPaid !== undefined && s.amountPaid !== null
+          ? Number(s.amountPaid)
+          : Math.max(0, (Number(s.totalAmount) || 0) - (Number(s.remainingCredit) || 0));
+        dailyMap[k].sales += paid || 0;
         dailyMap[k].profit += Number(s.totalProfit) || 0;
       }
     });
