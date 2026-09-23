@@ -372,8 +372,6 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
           phone: c.phone || '—',
           address: c.address || '—',
           debt,
-          status: debt > 0 ? 'Débiteur' : 'Soldé',
-          opsCount: c.history?.length || 0,
           lastTrxDate: lastTrx?.date ? new Date(lastTrx.date).toLocaleDateString(localeCode) : '—',
           lastTrxNote: lastTrx?.note || '—',
         };
@@ -426,8 +424,6 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
           name: c.name,
           phone: c.phone || '—',
           debt,
-          status: debt > 0 ? 'Débiteur' : 'Soldé',
-          opsCount: c.history?.length || 0,
           lastTrxDate: lastTrx?.date ? new Date(lastTrx.date).toLocaleDateString(localeCode) : '—',
           lastTrxNote: lastTrx?.note || '—',
         };
@@ -474,11 +470,11 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
       });
       csv += `\r\n"";"";"";"TOTAL RÈGLEMENTS COLLECTÉS :";"${data.totalAmount.toFixed(3)} DT"\r\n`;
     } else {
-      csv += `"Client";"Téléphone";"Nb Opérations";"Dernière Dette Date";"Dernière Dette Note";"Statut";"Solde Dû (DT)"\r\n`;
+      csv += `"Client";"Téléphone";"Dernière Dette Date";"Dernière Dette Note";"Solde Dû (DT)"\r\n`;
       (data.clientRows || []).forEach((c) => {
-        csv += `"${c.name}";"${c.phone}";"${c.opsCount}";"${c.lastTrxDate}";"${c.lastTrxNote}";"${c.status}";"${c.debt.toFixed(3)}"\r\n`;
+        csv += `"${c.name}";"${c.phone}";"${c.lastTrxDate}";"${c.lastTrxNote}";"${c.debt.toFixed(3)}"\r\n`;
       });
-      csv += `\r\n"";"";"";"";"";"TOTAL DETTES CUMULÉES :";"${data.totalDebt.toFixed(3)} DT"\r\n`;
+      csv += `\r\n"";"";"";"TOTAL DETTES CUMULÉES :";"${data.totalDebt.toFixed(3)} DT"\r\n`;
     }
     return csv;
   };
@@ -602,9 +598,7 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
             <tr>
               <th style="background-color:#2563eb;color:#fff;">Client</th>
               <th style="background-color:#2563eb;color:#fff;">Téléphone</th>
-              <th style="background-color:#2563eb;color:#fff;">Nb Opérations</th>
               <th style="background-color:#2563eb;color:#fff;">Dernier Mouvement</th>
-              <th style="background-color:#2563eb;color:#fff;">Statut</th>
               <th style="background-color:#2563eb;color:#fff;text-align:right;">Solde Dû (DT)</th>
             </tr>
           </thead>
@@ -613,9 +607,7 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
               <tr>
                 <td style="font-weight:bold;">${c.name}</td>
                 <td>${c.phone}</td>
-                <td style="text-align:center;">${c.opsCount}</td>
                 <td>${c.lastTrxDate !== '—' ? `${c.lastTrxDate} (${c.lastTrxNote})` : '—'}</td>
-                <td style="color:${c.debt > 0 ? '#dc2626' : '#16a34a'};font-weight:bold;">${c.status}</td>
                 <td style="text-align:right;font-weight:bold;color:${c.debt > 0 ? '#dc2626' : '#16a34a'};">
                   ${formatMoney(c.debt)}
                 </td>
@@ -624,7 +616,7 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
           </tbody>
           <tfoot>
             <tr style="background-color:#f1f5f9;font-weight:bold;border-top:2px solid #2563eb;">
-              <td colspan="5" style="text-align:right;">TOTAL DETTES CUMULÉES :</td>
+              <td colspan="3" style="text-align:right;">TOTAL DETTES CUMULÉES :</td>
               <td style="text-align:right;color:#dc2626;">${formatMoney(data.totalDebt)}</td>
             </tr>
           </tfoot>
@@ -719,19 +711,17 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
       txt += `TOTAL RÈGLEMENTS COLLECTÉS: ${data.items.length}\n`;
       txt += `MONTANT TOTAL ENCAISSÉ    : +${formatMoney(data.totalAmount)}\n`;
     } else {
-      txt += String('CLIENT').padEnd(26) + ' ' +
-             String('CONTACT').padEnd(14) + ' ' +
-             String('OPÉRATIONS').padEnd(12) + ' ' +
-             String('STATUT').padEnd(12) + ' ' +
+      txt += String('CLIENT').padEnd(32) + ' ' +
+             String('CONTACT').padEnd(16) + ' ' +
+             String('DERNIER MOUV.').padEnd(16) + ' ' +
              String('SOLDE DÛ (DT)').padStart(14) + '\n';
       txt += '-'.repeat(82) + '\n';
       (data.clientRows || []).forEach((c) => {
-        const cl = String(c.name).substring(0, 24).padEnd(26);
-        const ph = String(c.phone).substring(0, 12).padEnd(14);
-        const op = String(c.opsCount).padEnd(12);
-        const st = String(c.status).padEnd(12);
+        const cl = String(c.name).substring(0, 30).padEnd(32);
+        const ph = String(c.phone).substring(0, 14).padEnd(16);
+        const dt = String(c.lastTrxDate).substring(0, 14).padEnd(16);
         const db = formatMoney(c.debt).padStart(14);
-        txt += `${cl} ${ph} ${op} ${st} ${db}\n`;
+        txt += `${cl} ${ph} ${dt} ${db}\n`;
       });
       txt += '-'.repeat(82) + '\n';
       txt += `TOTAL CLIENTS LISTÉS : ${(data.clientRows || []).length}\n`;
