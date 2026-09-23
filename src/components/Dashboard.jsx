@@ -410,56 +410,56 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
     // Calculate granted credits in this period (new credits & customer debts created)
     let totalGrantedCredit = 0;
     let grantedCreditCount = 0;
-    const trackedCreditSourceIds = new Set();
+    const seenRefIds = new Set();
+    const seenTrxKeys = new Set();
 
-    // 1. Primary source of truth: Client account history transactions (amount > 0)
+    // 1. Sales in period with remaining credit
+    periodSales.forEach((s) => {
+      const debt = Number(s.remainingCredit || s.remainingDebt || 0);
+      if (debt > 0) {
+        totalGrantedCredit += debt;
+        grantedCreditCount += 1;
+        if (s.id) seenRefIds.add(String(s.id));
+        if (s.invoiceNumber) seenRefIds.add(String(s.invoiceNumber));
+      }
+    });
+
+    // 2. Repairs in period with remaining due
+    repairs.forEach((r) => {
+      const inPeriod = isInPeriod(r.deliveredAt || r.createdAt);
+      const debt = Number(r.remainingDue || 0);
+      if (inPeriod && debt > 0) {
+        totalGrantedCredit += debt;
+        grantedCreditCount += 1;
+        if (r.id) seenRefIds.add(String(r.id));
+        if (r.ticketNumber) seenRefIds.add(String(r.ticketNumber));
+      }
+    });
+
+    // 3. Client account history transactions (standalone manual debts not tied to sales/repairs)
     clients.forEach((c) => {
       if (Array.isArray(c.history)) {
         c.history.forEach((trx) => {
           const isDebt = Number(trx.amount) > 0 || trx.type === 'sale_credit' || trx.type === 'repair_credit' || trx.type === 'manual_debt' || trx.type === 'credit';
           if (isDebt && isInPeriod(trx.date)) {
             const amt = Number(trx.amount) || 0;
-            if (amt > 0) {
-              totalGrantedCredit += amt;
-              grantedCreditCount += 1;
-              if (trx.referenceId) {
-                trackedCreditSourceIds.add(String(trx.referenceId));
-              }
-              if (trx.id) {
-                trackedCreditSourceIds.add(String(trx.id));
+            const ref = trx.referenceId ? String(trx.referenceId) : null;
+            const isTiedToSalesOrRepairs = ref && (
+              seenRefIds.has(ref) ||
+              (repairs || []).some((r) => r.id === ref || r.ticketNumber === ref) ||
+              (sales || []).some((s) => s.id === ref || s.invoiceNumber === ref)
+            );
+
+            if (!isTiedToSalesOrRepairs && amt > 0) {
+              const uniqueKey = ref || trx.id || `${c.id}-${trx.date}-${amt}`;
+              if (!seenTrxKeys.has(uniqueKey)) {
+                seenTrxKeys.add(uniqueKey);
+                totalGrantedCredit += amt;
+                grantedCreditCount += 1;
               }
             }
           }
         });
-      }
-    });
-
-    // 2. Standalone sales in period with credit not recorded in client history
-    periodSales.forEach((s) => {
-      const debt = Number(s.remainingCredit || s.remainingDebt || 0);
-      if (debt > 0) {
-        const idStr = String(s.id);
-        const invStr = String(s.invoiceNumber || '');
-        if (!trackedCreditSourceIds.has(idStr) && !trackedCreditSourceIds.has(invStr)) {
-          totalGrantedCredit += debt;
-          grantedCreditCount += 1;
-          trackedCreditSourceIds.add(idStr);
-        }
-      }
-    });
-
-    // 3. Standalone repairs in period with credit not recorded in client history
-    repairs.forEach((r) => {
-      const inPeriod = isInPeriod(r.deliveredAt || r.createdAt);
-      const debt = Number(r.remainingDue || 0);
-      if (inPeriod && debt > 0) {
-        const idStr = String(r.id);
-        const ticketStr = String(r.ticketNumber || '');
-        if (!trackedCreditSourceIds.has(idStr) && !trackedCreditSourceIds.has(ticketStr)) {
-          totalGrantedCredit += debt;
-          grantedCreditCount += 1;
-          trackedCreditSourceIds.add(idStr);
-        }
       }
     });
 
