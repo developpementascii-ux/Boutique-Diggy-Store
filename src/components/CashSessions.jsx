@@ -231,9 +231,10 @@ export default function CashSessions() {
       const rec = recordsMap[dateKey];
       if (rec.salesList.some((item) => item.id === s.id)) return;
 
-      const amount = s.amountPaid !== undefined && s.amountPaid !== null
+      const debt = Number(s.remainingCredit || s.remainingDebt || 0);
+      const amount = Number(s.amountPaid) > 0
         ? Number(s.amountPaid)
-        : Math.max(0, (Number(s.totalAmount) || 0) - (Number(s.remainingCredit) || 0));
+        : Math.max(0, (Number(s.totalAmount || s.total || 0) - debt));
       const profit = Number(s.totalProfit) || 0;
       const cost = Number(s.totalCost) || (amount - profit);
 
@@ -315,97 +316,51 @@ export default function CashSessions() {
       });
     });
 
-    // Process repairs
+    // Process repairs (harmonized with Dashboard & SalesHistory)
     (repairs || []).forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
       const advance = Number(rep.advancePaid || rep.deposit || 0);
       const remainingDue = Number(rep.remainingDue || 0);
       const totalAmount = Math.max(Number(rep.totalPrice || rep.finalCost || rep.estimatedCost) || 0, advance + remainingDue);
-      const initialAdv = rep.initialAdvance !== undefined
-        ? Number(rep.initialAdvance)
-        : advance;
-
-      const remainingSettled = rep.remainingPaid !== undefined
-        ? Number(rep.remainingPaid)
-        : (isDelivered ? Math.max(0, totalAmount - initialAdv - remainingDue) : 0);
+      const paidRepairAmount = isDelivered
+        ? Math.max(0, totalAmount - remainingDue)
+        : (advance > 0 ? advance : Math.max(0, totalAmount - remainingDue));
 
       const laborProfit = Number(rep.laborCost) > 0
         ? Number(rep.laborCost)
         : Math.max(0, (Number(rep.totalPrice) || 0) - (Number(rep.pieceCost) || 0));
 
-      // 1. Initial Advance paid or ticket registered on createdAt
-      if (rep.createdAt) {
-        const createDateKey = getLocalDateKey(rep.createdAt);
-        if (createDateKey) {
-          if (!recordsMap[createDateKey]) {
-            if (period === 'all') {
-              recordsMap[createDateKey] = createEmptyDayRecord(createDateKey, createDateKey === todayKey);
-            }
-          }
-          if (recordsMap[createDateKey]) {
-            const rec = recordsMap[createDateKey];
-            if (!rec.repairsList.some((item) => item.id === rep.id && item.flowType === 'advance')) {
-              if (initialAdv > 0) {
-                rec.repairsRevenue += initialAdv;
-                rec.totalRevenue += initialAdv;
-                rec.cashSales += initialAdv;
-              }
-              rec.repairsCount += 1;
-              const advProfit = isDelivered
-                ? (laborProfit > 0 ? Math.min(laborProfit, initialAdv) : initialAdv)
-                : (initialAdv > 0 ? initialAdv : 0);
-              rec.grossProfit += advProfit;
-              rec.repairsList.push({
-                ...rep,
-                flowType: 'advance',
-                flowAmount: initialAdv,
-                flowProfit: advProfit,
-                flowLabel: initialAdv > 0 ? 'Acompte' : 'Dépôt SAV',
-              });
-            }
-          }
+      const profit = isDelivered
+        ? (laborProfit > 0 ? laborProfit : totalAmount)
+        : (advance > 0 ? advance : (laborProfit > 0 ? laborProfit : 0));
+
+      const effectiveDateKey = getLocalDateKey(rep.deliveredAt || rep.createdAt);
+      if (!effectiveDateKey) return;
+
+      if (!recordsMap[effectiveDateKey]) {
+        if (period === 'all') {
+          recordsMap[effectiveDateKey] = createEmptyDayRecord(effectiveDateKey, effectiveDateKey === todayKey);
+        } else {
+          return;
         }
       }
 
-      // 2. Final settlement paid on deliveredAt
-      if (isDelivered && rep.deliveredAt) {
-        const delivDateKey = getLocalDateKey(rep.deliveredAt);
-        if (delivDateKey) {
-          if (!recordsMap[delivDateKey]) {
-            if (period === 'all') {
-              recordsMap[delivDateKey] = createEmptyDayRecord(delivDateKey, delivDateKey === todayKey);
-            }
-          }
-          if (recordsMap[delivDateKey]) {
-            const rec = recordsMap[delivDateKey];
-            if (!rec.repairsList.some((item) => item.id === rep.id && item.flowType === 'delivery')) {
-              const createdSameDay = getLocalDateKey(rep.createdAt) === delivDateKey;
-              const remProfit = Math.max(0, (laborProfit > 0 ? laborProfit : Number(rep.totalPrice) || 0) - (createdSameDay ? Math.min(laborProfit, initialAdv) : 0));
-              rec.grossProfit += remProfit;
+      const rec = recordsMap[effectiveDateKey];
+      if (rec.repairsList.some((item) => item.id === rep.id)) return;
 
-              // If the remaining balance wasn't already registered via client credit collection:
-              const hasClientCreditPayment = rep.clientName && (clients || []).some((c) =>
-                (c.name?.toLowerCase() === rep.clientName.toLowerCase() || (c.phone && c.phone === rep.clientPhone)) &&
-                (c.history || []).some((t) => t.date && getLocalDateKey(t.date) === delivDateKey && (t.referenceId === rep.id || t.type === 'repair_payment'))
-              );
-
-              if (!hasClientCreditPayment && remainingSettled > 0) {
-                rec.repairsRevenue += remainingSettled;
-                rec.totalRevenue += remainingSettled;
-                rec.cashSales += remainingSettled;
-              }
-
-              rec.repairsCount += 1;
-              rec.repairsList.push({
-                ...rep,
-                flowType: 'delivery',
-                flowAmount: remainingSettled,
-                flowProfit: remProfit,
-                flowLabel: 'Règlement solde',
-              });
-            }
-          }
-        }
+      if (paidRepairAmount > 0) {
+        rec.repairsRevenue += paidRepairAmount;
+        rec.totalRevenue += paidRepairAmount;
+        rec.cashSales += paidRepairAmount;
+        rec.grossProfit += profit;
+        rec.repairsCount += 1;
+        rec.repairsList.push({
+          ...rep,
+          flowType: isDelivered ? 'delivery' : 'advance',
+          flowAmount: paidRepairAmount,
+          flowProfit: profit,
+          flowLabel: isDelivered ? 'Réparation Clôturée & Encaissée' : 'Acompte Dépôt SAV',
+        });
       }
     });
 
@@ -559,6 +514,10 @@ export default function CashSessions() {
         const id = `sale-${s.id}`;
         if (!seenIds.has(id)) {
           seenIds.add(id);
+          const debt = Number(s.remainingCredit || s.remainingDebt || 0);
+          const saleAmt = Number(s.amountPaid) > 0
+            ? Number(s.amountPaid)
+            : Math.max(0, (Number(s.totalAmount || s.total || 0) - debt));
           list.push({
             id,
             date: s.date,
@@ -566,7 +525,7 @@ export default function CashSessions() {
             direction: 'in',
             title: `Vente ${s.invoiceNumber || ''}`,
             subtitle: `${s.clientName || 'Client Comptoir'} (${s.items?.length || 1} articles)`,
-            amount: Number(s.amountPaid) || Number(s.totalAmount) || 0,
+            amount: saleAmt,
             profit: Number(s.totalProfit) || 0,
             paymentMethod: s.paymentMethod || 'cash',
           });
@@ -610,18 +569,16 @@ export default function CashSessions() {
       });
 
       (rec.repairsList || []).forEach((r) => {
-        const id = `repair-${r.id}-${r.flowType || 'item'}`;
+        const id = `repair-${r.id}`;
         if (!seenIds.has(id)) {
           seenIds.add(id);
-          const flowAmt = Number(r.flowAmount) || Number(r.advancePaid) || Number(r.totalPrice) || 0;
+          const flowAmt = Number(r.flowAmount) > 0 ? Number(r.flowAmount) : (Number(r.advancePaid) || Number(r.totalPrice) || 0);
           const laborProfit = r.flowProfit !== undefined
             ? Number(r.flowProfit)
-            : (r.flowType === 'delivery'
-              ? (Number(r.laborCost) > 0 ? Number(r.laborCost) : Math.max(0, (Number(r.totalPrice) || 0) - (Number(r.pieceCost) || 0)))
-              : (Number(r.advancePaid) || 0));
+            : (Number(r.laborCost) > 0 ? Number(r.laborCost) : Math.max(0, (Number(r.totalPrice) || 0) - (Number(r.pieceCost) || 0)));
           list.push({
             id,
-            date: r.flowType === 'delivery' ? (r.deliveredAt || r.createdAt) : r.createdAt,
+            date: r.deliveredAt || r.createdAt,
             type: 'repair',
             direction: 'in',
             title: `Réparation ${r.ticketNumber || ''} (${r.flowLabel || 'SAV'})`,
@@ -732,8 +689,12 @@ export default function CashSessions() {
         (sales || []).forEach((s) => {
           if (s.date && getLocalDateKey(s.date) === dateKey) {
             hasData = true;
+            const debt = Number(s.remainingCredit || s.remainingDebt || 0);
+            const saleAmt = Number(s.amountPaid) > 0
+              ? Number(s.amountPaid)
+              : Math.max(0, (Number(s.totalAmount || s.total || 0) - debt));
             profit += Number(s.totalProfit) || 0;
-            revenue += Number(s.amountPaid) || Number(s.totalAmount) || 0;
+            revenue += saleAmt;
           }
         });
         (expenses || []).forEach((e) => {
@@ -753,19 +714,27 @@ export default function CashSessions() {
         });
         (repairs || []).forEach((r) => {
           const isDelivered = r.status === 'delivered';
-          const initialAdv = Number(r.initialAdvance) || Number(r.advancePaid) || 0;
-          const labor = Number(r.laborCost) > 0 ? Number(r.laborCost) : Math.max(0, (Number(r.totalPrice) || 0) - (Number(r.pieceCost) || 0));
-          if (r.createdAt && getLocalDateKey(r.createdAt) === dateKey && initialAdv > 0) {
-            hasData = true;
-            const advProf = isDelivered ? Math.min(labor, initialAdv) : initialAdv;
-            profit += advProf;
-            revenue += initialAdv;
-          }
-          if (isDelivered && r.deliveredAt && getLocalDateKey(r.deliveredAt) === dateKey) {
-            hasData = true;
-            const createdSameDay = getLocalDateKey(r.createdAt) === dateKey;
-            const remProfit = Math.max(0, labor - (createdSameDay ? Math.min(labor, initialAdv) : 0));
-            profit += remProfit;
+          const effectiveDateKey = getLocalDateKey(r.deliveredAt || r.createdAt);
+          if (effectiveDateKey === dateKey) {
+            const advance = Number(r.advancePaid || r.deposit || 0);
+            const remainingDue = Number(r.remainingDue || 0);
+            const totalAmount = Math.max(Number(r.totalPrice || r.finalCost || r.estimatedCost) || 0, advance + remainingDue);
+            const paidRepairAmount = isDelivered
+              ? Math.max(0, totalAmount - remainingDue)
+              : (advance > 0 ? advance : Math.max(0, totalAmount - remainingDue));
+
+            const labor = Number(r.laborCost) > 0
+              ? Number(r.laborCost)
+              : Math.max(0, (Number(r.totalPrice) || 0) - (Number(r.pieceCost) || 0));
+            const repairProfit = isDelivered
+              ? (labor > 0 ? labor : totalAmount)
+              : (advance > 0 ? advance : (labor > 0 ? labor : 0));
+
+            if (paidRepairAmount > 0) {
+              hasData = true;
+              revenue += paidRepairAmount;
+              profit += repairProfit;
+            }
           }
         });
       }
@@ -1915,7 +1884,11 @@ export default function CashSessions() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '220px', overflowY: 'auto' }}>
                     {activeDayRecord.salesList.map((s) => {
-                      const saleCost = Number(s.totalCost) || ((Number(s.amountPaid) || Number(s.totalAmount) || 0) - (Number(s.totalProfit) || 0));
+                      const debt = Number(s.remainingCredit || s.remainingDebt || 0);
+                      const paidAmt = Number(s.amountPaid) > 0
+                        ? Number(s.amountPaid)
+                        : Math.max(0, (Number(s.totalAmount || s.total || 0) - debt));
+                      const saleCost = Number(s.totalCost) || (paidAmt - (Number(s.totalProfit) || 0));
                       return (
                         <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', padding: '0.65rem 0.75rem', background: 'var(--bg-input)', borderRadius: '6px', fontSize: '0.8rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1923,7 +1896,12 @@ export default function CashSessions() {
                               <strong>{s.invoiceNumber || 'Ticket'}</strong> • <span style={{ color: 'var(--text-secondary)' }}>{s.clientName || 'Client'}</span>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                              <span className="privacy-blur" style={{ fontWeight: 800, fontSize: '0.9rem' }}>{formatMoney(s.totalAmount)}</span>
+                              <span className="privacy-blur" style={{ fontWeight: 800, fontSize: '0.9rem', color: '#10b981' }}>+{formatMoney(paidAmt)}</span>
+                              {debt > 0 && (
+                                <div style={{ fontSize: '0.68rem', color: '#f87171' }}>
+                                  Crédit accordé: {formatMoney(debt)}
+                                </div>
+                              )}
                             </div>
                           </div>
 
