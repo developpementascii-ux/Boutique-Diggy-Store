@@ -145,6 +145,8 @@ export const mapRepairFromDB = (db) => {
     ? Number(extra.remainingDue)
     : Math.max(0, totalPrice - advancePaid);
 
+  const issueText = db.problem_description || extra.issueDescription || extra.problemDescription || '';
+
   return {
     id: db.id,
     ticketNumber: db.ticket_number,
@@ -153,8 +155,13 @@ export const mapRepairFromDB = (db) => {
     clientId: db.client_id,
     deviceModel: db.device_model,
     devicePassword: db.device_password,
-    problemDescription: db.problem_description,
-    notes: extra.notes !== undefined ? extra.notes : db.notes,
+    problemDescription: issueText,
+    issueDescription: issueText,
+    pieceUsedId: extra.pieceUsedId || '',
+    pieceName: extra.pieceName || '',
+    deductStock: extra.deductStock !== undefined ? extra.deductStock : true,
+    expectedDate: extra.expectedDate || '',
+    notes: extra.notes !== undefined ? extra.notes : (db.notes && !db.notes.startsWith('{') ? db.notes : ''),
     deposit: advancePaid,
     advancePaid: advancePaid,
     initialAdvance: extra.initialAdvance !== undefined ? Number(extra.initialAdvance) : advancePaid,
@@ -175,6 +182,7 @@ export const mapRepairFromDB = (db) => {
 };
 
 export const mapRepairToDB = (r) => {
+  const issueText = r.issueDescription || r.problemDescription || '';
   const metaObj = {
     notes: r.notes || '',
     pieceCost: r.pieceCost || 0,
@@ -183,6 +191,11 @@ export const mapRepairToDB = (r) => {
     remainingPaid: r.remainingPaid || 0,
     remainingDue: r.remainingDue || 0,
     priority: r.priority || 'normal',
+    pieceUsedId: r.pieceUsedId || '',
+    pieceName: r.pieceName || '',
+    deductStock: r.deductStock !== undefined ? r.deductStock : true,
+    expectedDate: r.expectedDate || '',
+    issueDescription: issueText,
   };
 
   const totalPrice = Number(r.totalPrice || r.finalCost || r.estimatedCost || 0);
@@ -196,7 +209,7 @@ export const mapRepairToDB = (r) => {
     client_id: r.clientId,
     device_model: r.deviceModel,
     device_password: r.devicePassword,
-    problem_description: r.problemDescription,
+    problem_description: issueText,
     notes: JSON.stringify(metaObj),
     deposit: advancePaid,
     estimated_cost: totalPrice,

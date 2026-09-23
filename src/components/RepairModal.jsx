@@ -41,6 +41,19 @@ export default function RepairModal({ repair, onClose }) {
 
   const isEditing = Boolean(repair);
 
+  // Helper to format ISO date string to "YYYY-MM-DDTHH:mm" for datetime-local inputs
+  const formatDatetimeForInput = (isoStr) => {
+    if (!isoStr) return '';
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return '';
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch {
+      return '';
+    }
+  };
+
   const [formData, setFormData] = useState({
     clientId: '',
     clientName: '',
@@ -58,6 +71,8 @@ export default function RepairModal({ repair, onClose }) {
     priority: 'normal',
     notes: '',
     expectedDate: '',
+    createdAt: formatDatetimeForInput(new Date().toISOString()),
+    deliveredAt: '',
   });
 
   // Source mode for piece: 'stock' | 'external' | 'none'
@@ -87,12 +102,16 @@ export default function RepairModal({ repair, onClose }) {
         ? Number(repair.remainingPaid)
         : (repair.remainingDue !== undefined ? Number(repair.remainingDue) : Math.max(0, (Number(repair.totalPrice) || 0) - effectiveAdvance));
 
+      const rawIssue = repair.issueDescription || repair.problemDescription || repair.problem || repair.diagnostic || repair.description || '';
+      const rawDate = repair.createdAt || repair.date || new Date().toISOString();
+      const rawDelivered = repair.deliveredAt || '';
+
       setFormData({
         clientId: repair.clientId || '',
         clientName: repair.clientName || '',
         clientPhone: repair.clientPhone || '',
-        deviceModel: repair.deviceModel || '',
-        issueDescription: repair.issueDescription || '',
+        deviceModel: repair.deviceModel || repair.model || '',
+        issueDescription: rawIssue,
         pieceUsedId: repair.pieceUsedId || '',
         pieceName: repair.pieceName || '',
         pieceCost: repair.pieceCost || 0,
@@ -105,6 +124,8 @@ export default function RepairModal({ repair, onClose }) {
         priority: repair.priority || 'normal',
         notes: repair.notes || '',
         expectedDate: repair.expectedDate || '',
+        createdAt: formatDatetimeForInput(rawDate),
+        deliveredAt: formatDatetimeForInput(rawDelivered),
       });
 
       if (hasStockPiece) {
@@ -331,14 +352,15 @@ export default function RepairModal({ repair, onClose }) {
     e.preventDefault();
     if (!formData.deviceModel.trim()) return;
 
-    const pieceCost = Number(formData.pieceCost) || 0;
-    const laborCost = Number(formData.laborCost) || 0;
-    const totalPrice = Number(formData.totalPrice) || (pieceCost + laborCost);
-    const advancePaid = Number(formData.advancePaid) || 0;
-    const remDue = formData.remainingDue !== undefined ? Number(formData.remainingDue) : Math.max(0, totalPrice - advancePaid);
+    const finalCreatedAt = formData.createdAt ? new Date(formData.createdAt).toISOString() : (repair?.createdAt || new Date().toISOString());
+    const finalDeliveredAt = formData.status === 'delivered'
+      ? (formData.deliveredAt ? new Date(formData.deliveredAt).toISOString() : (repair?.deliveredAt || finalCreatedAt))
+      : null;
 
     const payload = {
       ...formData,
+      createdAt: finalCreatedAt,
+      deliveredAt: finalDeliveredAt,
       pieceCost,
       laborCost,
       totalPrice,
@@ -1309,14 +1331,21 @@ export default function RepairModal({ repair, onClose }) {
               </span>
             </div>
 
-            {/* 6. Status & Date */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+            {/* 6. Status & Dates */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">{t('statusLabel')}</label>
                 <select
                   className="form-select"
                   value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  onChange={(e) => {
+                    const newSt = e.target.value;
+                    setFormData((prev) => ({
+                      ...prev,
+                      status: newSt,
+                      deliveredAt: newSt === 'delivered' && !prev.deliveredAt ? prev.createdAt : prev.deliveredAt,
+                    }));
+                  }}
                 >
                   <option value="received">{t('statusReceived')}</option>
                   <option value="in_progress">{t('statusInProgress')}</option>
@@ -1324,6 +1353,16 @@ export default function RepairModal({ repair, onClose }) {
                   <option value="delivered">{t('statusDelivered')}</option>
                   <option value="cancelled">{t('statusCancelled')}</option>
                 </select>
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">{t('repairCreationDate') || 'Date Dépôt / Création'}</label>
+                <input
+                  type="datetime-local"
+                  className="form-input"
+                  value={formData.createdAt}
+                  onChange={(e) => setFormData({ ...formData, createdAt: e.target.value })}
+                />
               </div>
 
               <div className="form-group" style={{ margin: 0 }}>
@@ -1335,6 +1374,21 @@ export default function RepairModal({ repair, onClose }) {
                   onChange={(e) => setFormData({ ...formData, expectedDate: e.target.value })}
                 />
               </div>
+
+              {formData.status === 'delivered' && (
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ color: 'var(--accent-success)', fontWeight: 700 }}>
+                    {t('repairDeliveryDate') || 'Date Livraison / Clôture'}
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className="form-input"
+                    style={{ borderColor: 'var(--accent-success)' }}
+                    value={formData.deliveredAt}
+                    onChange={(e) => setFormData({ ...formData, deliveredAt: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
 
             {/* 7. Notes */}

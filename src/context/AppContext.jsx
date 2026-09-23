@@ -952,7 +952,7 @@ export function AppProvider({ children }) {
       remainingDue,
       status: repairData.status || 'received',
       priority: repairData.priority || 'normal',
-      createdAt: new Date().toISOString(),
+      createdAt: repairData.createdAt || new Date().toISOString(),
     };
 
     updateRepairsState((prev) => [newRepair, ...prev]);
@@ -1015,15 +1015,21 @@ export function AppProvider({ children }) {
             ? Number(updatedData.initialAdvance)
             : (rep.initialAdvance !== undefined ? Number(rep.initialAdvance) : advancePaid);
 
+          const effectiveCreatedAt = updatedData.createdAt || rep.createdAt || rep.date || nowIso;
+          const effectiveDeliveredAt = isDelivered
+            ? (updatedData.deliveredAt || rep.deliveredAt || effectiveCreatedAt)
+            : null;
+
           const updated = {
             ...rep,
             ...updatedData,
+            createdAt: effectiveCreatedAt,
             totalPrice,
             initialAdvance,
             advancePaid,
             remainingDue,
-            deliveredAt: isDelivered ? (rep.deliveredAt || nowIso) : rep.deliveredAt,
-            paidAt: isDelivered && remainingDue === 0 ? (rep.paidAt || nowIso) : rep.paidAt,
+            deliveredAt: effectiveDeliveredAt,
+            paidAt: isDelivered && remainingDue === 0 ? (updatedData.paidAt || rep.paidAt || effectiveDeliveredAt) : rep.paidAt,
           };
 
           if (supabaseService.isAvailable()) {
