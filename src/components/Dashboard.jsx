@@ -224,19 +224,19 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
     repairs.forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
       const effectiveDate = rep.deliveredAt || rep.createdAt;
-      const createdInPeriod = isInPeriod(rep.createdAt);
-      const deliveredInPeriod = isDelivered && isInPeriod(rep.deliveredAt);
+      const createdInPeriod = rep.createdAt ? isInPeriod(rep.createdAt) : false;
+      const deliveredInPeriod = isDelivered && rep.deliveredAt ? isInPeriod(rep.deliveredAt) : false;
 
-      const totalAmount = Number(rep.totalPrice) || 0;
-      const advance = Number(rep.advancePaid) || 0;
+      if (!isInPeriod(effectiveDate) && !createdInPeriod && !deliveredInPeriod) {
+        return;
+      }
+
+      const totalAmount = Number(rep.totalPrice || rep.finalCost || rep.estimatedCost || 0);
       const remainingDue = Number(rep.remainingDue || 0);
-      const initialAdv = rep.initialAdvance !== undefined
-        ? Number(rep.initialAdvance)
-        : advance;
-
-      const remainingSettled = rep.remainingPaid !== undefined
-        ? Number(rep.remainingPaid)
-        : (isDelivered ? Math.max(0, totalAmount - initialAdv - remainingDue) : 0);
+      const advance = Number(rep.advancePaid || rep.initialAdvance || rep.deposit || 0);
+      const paidRepairAmount = isDelivered
+        ? Math.max(0, totalAmount - remainingDue)
+        : (advance > 0 ? advance : Math.max(0, totalAmount - remainingDue));
 
       const baseLabor = Number(rep.laborCost) > 0
         ? Number(rep.laborCost)
@@ -246,32 +246,9 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
         ? (baseLabor > 0 ? baseLabor : totalAmount)
         : (advance > 0 ? advance : (baseLabor > 0 ? baseLabor : 0));
 
-      const paidRepairAmount = Math.max(0, totalAmount - (Number(rep.remainingDue) || 0));
-
-      if (isInPeriod(effectiveDate) || createdInPeriod || deliveredInPeriod) {
-        let rRev = 0;
-        let rProf = 0;
-
-        if (createdInPeriod && deliveredInPeriod) {
-          rRev = paidRepairAmount;
-          rProf = profit;
-        } else if (deliveredInPeriod) {
-          rRev = remainingSettled > 0 ? remainingSettled : paidRepairAmount;
-          rProf = Math.max(0, profit - (initialAdv > 0 ? Math.min(profit, initialAdv) : 0));
-        } else if (createdInPeriod) {
-          rRev = initialAdv;
-          rProf = isDelivered ? Math.min(profit, initialAdv) : (initialAdv > 0 ? initialAdv : 0);
-        } else if (isInPeriod(effectiveDate)) {
-          rRev = paidRepairAmount;
-          rProf = profit;
-        }
-
-        if (rRev > 0 || rProf > 0 || isInPeriod(effectiveDate)) {
-          repairsRev += rRev;
-          repairsProf += rProf;
-          periodRepairOperationsCount += 1;
-        }
-      }
+      repairsRev += paidRepairAmount;
+      repairsProf += profit;
+      periodRepairOperationsCount += 1;
     });
 
     // Calculate totals including counter sales, workshop repairs, and recovered customer debts (excluding granted credit)
@@ -367,44 +344,27 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
     // Populate repair inflow & profit onto chart days
     repairs.forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
-      const totalAmount = Number(rep.totalPrice) || 0;
-      const advance = Number(rep.advancePaid) || 0;
-      const remainingDue = Number(rep.remainingDue || 0);
-      const initialAdv = rep.initialAdvance !== undefined
-        ? Number(rep.initialAdvance)
-        : advance;
+      const effectiveDate = rep.deliveredAt || rep.createdAt;
+      if (!effectiveDate) return;
+      const k = getLocalDateKey(effectiveDate);
+      if (dailyMap[k]) {
+        const totalAmount = Number(rep.totalPrice || rep.finalCost || rep.estimatedCost || 0);
+        const remainingDue = Number(rep.remainingDue || 0);
+        const advance = Number(rep.advancePaid || rep.initialAdvance || rep.deposit || 0);
+        const paidRepairAmount = isDelivered
+          ? Math.max(0, totalAmount - remainingDue)
+          : (advance > 0 ? advance : Math.max(0, totalAmount - remainingDue));
 
-      const remainingSettled = rep.remainingPaid !== undefined
-        ? Number(rep.remainingPaid)
-        : (isDelivered ? Math.max(0, totalAmount - initialAdv - remainingDue) : 0);
+        const baseLabor = Number(rep.laborCost) > 0
+          ? Number(rep.laborCost)
+          : Math.max(0, totalAmount - (Number(rep.pieceCost) || 0));
 
-      const baseLabor = Number(rep.laborCost) > 0
-        ? Number(rep.laborCost)
-        : Math.max(0, (Number(rep.totalPrice) || 0) - (Number(rep.pieceCost) || 0));
+        const profit = isDelivered
+          ? (baseLabor > 0 ? baseLabor : totalAmount)
+          : (advance > 0 ? advance : (baseLabor > 0 ? baseLabor : 0));
 
-      // Advance on createdAt
-      if (rep.createdAt && initialAdv > 0) {
-        const kCreate = getLocalDateKey(rep.createdAt);
-        if (dailyMap[kCreate]) {
-          dailyMap[kCreate].sales += initialAdv;
-          const advProfit = isDelivered
-            ? (baseLabor > 0 ? Math.min(baseLabor, initialAdv) : initialAdv)
-            : (initialAdv > 0 ? initialAdv : 0);
-          dailyMap[kCreate].profit += advProfit;
-        }
-      }
-
-      // Final settlement on deliveredAt
-      if (isDelivered && rep.deliveredAt) {
-        const kDeliv = getLocalDateKey(rep.deliveredAt);
-        if (dailyMap[kDeliv]) {
-          if (remainingSettled > 0) {
-            dailyMap[kDeliv].sales += remainingSettled;
-          }
-          const createdSameDay = getLocalDateKey(rep.createdAt) === kDeliv;
-          const remProfit = Math.max(0, (baseLabor > 0 ? baseLabor : Number(rep.totalPrice) || 0) - (createdSameDay ? Math.min(baseLabor, initialAdv) : 0));
-          dailyMap[kDeliv].profit += remProfit;
-        }
+        dailyMap[k].sales += paidRepairAmount;
+        dailyMap[k].profit += profit;
       }
     });
 
