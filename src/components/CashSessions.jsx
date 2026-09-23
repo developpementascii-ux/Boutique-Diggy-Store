@@ -429,6 +429,8 @@ export default function CashSessions() {
     let totalCounterSales = 0;
     let totalRepairsRevenue = 0;
     let totalCreditCollected = 0;
+    let totalSalesOnlyCount = 0;
+    let totalRepairsOnlyCount = 0;
     let totalCreditsCount = 0;
     let profitableDaysCount = 0;
     let lossDaysCount = 0;
@@ -437,6 +439,8 @@ export default function CashSessions() {
       totalCounterSales += (r.salesRevenue || 0);
       totalRepairsRevenue += (r.repairsRevenue || 0);
       totalCreditCollected += (r.creditCollected || 0);
+      totalSalesOnlyCount += (r.salesCount || 0);
+      totalRepairsOnlyCount += (r.repairsCount || 0);
       totalCreditsCount += (r.creditsCount || 0);
       totalRevenue += r.totalRevenue;
       totalGrossProfit += r.grossProfit;
@@ -526,6 +530,8 @@ export default function CashSessions() {
       totalExpensesCount,
       totalCreditCollected,
       totalCreditsCount,
+      totalSalesOnlyCount,
+      totalRepairsOnlyCount,
       totalGrantedCredit,
       grantedCreditCount,
       totalCashInflow,
@@ -987,9 +993,8 @@ export default function CashSessions() {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            <span>{periodSummary.totalSalesCount} {t('operationsCount') || 'opérations'} • {t('avgTicket') || 'Panier'}: <span className="privacy-blur">{formatMoney(periodSummary.avgTicket)}</span></span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-              🛒 {formatMoney(periodSummary.totalCounterSales)} + 🔧 {formatMoney(periodSummary.totalRepairsRevenue)} + 💰 {formatMoney(periodSummary.totalCreditCollected)}
+            <span>
+              {periodSummary.totalSalesCount} {t('transactions') || 'transactions'} ({periodSummary.totalSalesOnlyCount} 🛒 / {periodSummary.totalRepairsOnlyCount} 🔧 / {periodSummary.totalCreditsCount} 💰) • {period === 'yesterday' ? (t('periodYesterday') || 'Hier') : period === 'today' ? (t('periodToday') || "Aujourd'hui") : period === 'custom' ? customDate : (t(`period_${period}`) || period)}
             </span>
           </div>
         </div>

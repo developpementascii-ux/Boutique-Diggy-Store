@@ -275,9 +275,10 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
 
     // Calculate totals including counter sales, workshop repairs, and recovered customer debts (excluding granted credit)
     const salesRev = periodSales.reduce((sum, s) => {
-      const paid = s.amountPaid !== undefined && s.amountPaid !== null
+      const debt = Number(s.remainingCredit || s.remainingDebt || 0);
+      const paid = Number(s.amountPaid) > 0
         ? Number(s.amountPaid)
-        : Math.max(0, (Number(s.totalAmount) || 0) - (Number(s.remainingCredit) || 0));
+        : Math.max(0, (Number(s.totalAmount || s.total || 0) - debt));
       return sum + (paid || 0);
     }, 0);
     const totalRev = salesRev + repairsRev + collectedCredit;
@@ -345,9 +346,10 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
       if (!s.date) return;
       const k = getLocalDateKey(s.date);
       if (dailyMap[k]) {
-        const paid = s.amountPaid !== undefined && s.amountPaid !== null
+        const debt = Number(s.remainingCredit || s.remainingDebt || 0);
+        const paid = Number(s.amountPaid) > 0
           ? Number(s.amountPaid)
-          : Math.max(0, (Number(s.totalAmount) || 0) - (Number(s.remainingCredit) || 0));
+          : Math.max(0, (Number(s.totalAmount || s.total || 0) - debt));
         dailyMap[k].sales += paid || 0;
         dailyMap[k].profit += Number(s.totalProfit) || 0;
       }
@@ -477,6 +479,8 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
 
     return {
       totalRev,
+      salesRev,
+      repairsRev,
       totalProf,
       totalExp,
       realNetProfit: totalProf - totalExp,
@@ -485,6 +489,8 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
       totalGrantedCredit,
       grantedCreditCount,
       salesCount,
+      salesListCount: periodSales.length,
+      repairListCount: periodRepairOperationsCount,
       avgTicket,
       marginRate,
       chartPoints,
@@ -865,9 +871,8 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            <span>{periodData.salesCount} {t('operationsCount') || 'ventes'} • {t('avgTicket') || 'Panier'}: <span className="privacy-blur">{formatMoney(periodData.avgTicket)}</span></span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-              🛒 {formatMoney(periodData.salesRev)} + 🔧 {formatMoney(periodData.repairsRev)} + 💰 {formatMoney(periodData.collectedCredit)}
+            <span>
+              {periodData.salesCount} {t('transactions') || 'transactions'} ({periodData.salesListCount} 🛒 / {periodData.repairListCount} 🔧 / {periodData.collectedCreditCount} 💰) • {periodData.periodLabel}
             </span>
           </div>
         </div>
