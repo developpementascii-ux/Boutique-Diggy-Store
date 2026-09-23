@@ -443,45 +443,59 @@ export default function CashSessions() {
     const activeDateKeys = new Set(dailyRecords.map((r) => r.dateKey));
     let totalGrantedCredit = 0;
     let grantedCreditCount = 0;
+    const trackedCreditSourceIds = new Set();
 
-    (sales || []).forEach((s) => {
-      if (s.date && activeDateKeys.has(getLocalDateKey(s.date))) {
-        const debt = Number(s.remainingCredit || s.remainingDebt || 0);
-        if (debt > 0) {
-          totalGrantedCredit += debt;
-          grantedCreditCount += 1;
-        }
-      }
-    });
-
-    const seenRepairDebtIds = new Set();
-    (repairs || []).forEach((r) => {
-      const effKey = getLocalDateKey(r.deliveredAt || r.createdAt);
-      if (effKey && activeDateKeys.has(effKey) && Number(r.remainingDue) > 0 && !seenRepairDebtIds.has(r.id)) {
-        seenRepairDebtIds.add(r.id);
-        totalGrantedCredit += Number(r.remainingDue);
-        grantedCreditCount += 1;
-      }
-    });
-
-    const seenTrxIds = new Set();
+    // 1. Primary source of truth: Client account history transactions (amount > 0)
     (clients || []).forEach((c) => {
       (c.history || []).forEach((trx) => {
-        const isDebt = Number(trx.amount) > 0 || trx.type === 'sale_credit' || trx.type === 'repair_credit' || trx.type === 'manual_debt';
+        const isDebt = Number(trx.amount) > 0 || trx.type === 'sale_credit' || trx.type === 'repair_credit' || trx.type === 'manual_debt' || trx.type === 'credit';
         if (isDebt && trx.date && activeDateKeys.has(getLocalDateKey(trx.date))) {
-          const ref = trx.referenceId;
-          const alreadyInSales = ref && (sales || []).some((s) => (s.id === ref || s.invoiceNumber === ref) && s.date && activeDateKeys.has(getLocalDateKey(s.date)));
-          const alreadyInRepairs = ref && (repairs || []).some((r) => (r.id === ref || r.ticketNumber === ref) && activeDateKeys.has(getLocalDateKey(r.deliveredAt || r.createdAt)));
-          if (!alreadyInSales && !alreadyInRepairs) {
-            const trxKey = trx.id || `${c.id}-${trx.date}-${trx.amount}`;
-            if (!seenTrxIds.has(trxKey)) {
-              seenTrxIds.add(trxKey);
-              totalGrantedCredit += Number(trx.amount) || 0;
-              grantedCreditCount += 1;
+          const amt = Number(trx.amount) || 0;
+          if (amt > 0) {
+            totalGrantedCredit += amt;
+            grantedCreditCount += 1;
+            if (trx.referenceId) {
+              trackedCreditSourceIds.add(String(trx.referenceId));
+            }
+            if (trx.id) {
+              trackedCreditSourceIds.add(String(trx.id));
             }
           }
         }
       });
+    });
+
+    // 2. Standalone sales in period with credit not recorded in client history
+    (sales || []).forEach((s) => {
+      if (s.date && activeDateKeys.has(getLocalDateKey(s.date))) {
+        const debt = Number(s.remainingCredit || s.remainingDebt || 0);
+        if (debt > 0) {
+          const idStr = String(s.id);
+          const invStr = String(s.invoiceNumber || '');
+          if (!trackedCreditSourceIds.has(idStr) && !trackedCreditSourceIds.has(invStr)) {
+            totalGrantedCredit += debt;
+            grantedCreditCount += 1;
+            trackedCreditSourceIds.add(idStr);
+          }
+        }
+      }
+    });
+
+    // 3. Standalone repairs in period with credit not recorded in client history
+    (repairs || []).forEach((r) => {
+      const effKey = getLocalDateKey(r.deliveredAt || r.createdAt);
+      if (effKey && activeDateKeys.has(effKey)) {
+        const debt = Number(r.remainingDue || 0);
+        if (debt > 0) {
+          const idStr = String(r.id);
+          const ticketStr = String(r.ticketNumber || '');
+          if (!trackedCreditSourceIds.has(idStr) && !trackedCreditSourceIds.has(ticketStr)) {
+            totalGrantedCredit += debt;
+            grantedCreditCount += 1;
+            trackedCreditSourceIds.add(idStr);
+          }
+        }
+      }
     });
 
     const totalCost = dailyRecords.reduce((acc, r) => acc + (r.totalCost || 0), 0);
