@@ -139,6 +139,11 @@ export default function SalesHistory({ onEditRepair }) {
 
     // Map sales
     (sales || []).forEach((sale) => {
+      const debt = Number(sale.remainingCredit || sale.remainingDebt || 0);
+      const amountPaid = Number(sale.amountPaid) > 0
+        ? Number(sale.amountPaid)
+        : Math.max(0, (Number(sale.totalAmount || sale.total || 0) - debt));
+
       list.push({
         id: `sale-${sale.id}`,
         kind: 'sale',
@@ -148,9 +153,9 @@ export default function SalesHistory({ onEditRepair }) {
         clientPhone: sale.clientPhone || '',
         itemsList: sale.items || [],
         detailsSummary: (sale.items || []).map((it) => `${it.name} (x${it.quantity})`).join(', '),
-        totalAmount: Number(sale.totalAmount) || 0,
-        amountPaid: Number(sale.amountPaid) || 0,
-        remainingDue: Number(sale.remainingCredit) || 0,
+        totalAmount: Number(sale.totalAmount || sale.total) || 0,
+        amountPaid,
+        remainingDue: debt,
         profit: Number(sale.totalProfit) || 0,
         paymentType: sale.paymentType || 'cash',
         status: 'completed',
@@ -162,9 +167,12 @@ export default function SalesHistory({ onEditRepair }) {
     (repairs || []).forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
       const effectiveDate = rep.deliveredAt || rep.createdAt;
-      const totalAmount = Number(rep.totalPrice) || 0;
-      const remainingDue = rep.remainingDue !== undefined ? Number(rep.remainingDue) : (isDelivered ? 0 : Math.max(0, totalAmount - (Number(rep.advancePaid) || 0)));
-      const amountPaid = rep.advancePaid !== undefined ? Number(rep.advancePaid) : Math.max(0, totalAmount - remainingDue);
+      const totalAmount = Number(rep.totalPrice || rep.finalCost || rep.estimatedCost) || 0;
+      const remainingDue = rep.remainingDue !== undefined ? Number(rep.remainingDue) : (isDelivered ? 0 : Math.max(0, totalAmount - (Number(rep.advancePaid || rep.deposit || 0))));
+      const advance = Number(rep.advancePaid || rep.initialAdvance || rep.deposit || 0);
+      const amountPaid = advance > 0
+        ? (isDelivered ? Math.max(0, totalAmount - remainingDue) : advance)
+        : Math.max(0, totalAmount - remainingDue);
 
       const baseLabor = Number(rep.laborCost) > 0
         ? Number(rep.laborCost)
