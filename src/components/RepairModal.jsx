@@ -352,6 +352,12 @@ export default function RepairModal({ repair, onClose }) {
     e.preventDefault();
     if (!formData.deviceModel.trim()) return;
 
+    const pieceCost = Number(formData.pieceCost) || 0;
+    const laborCost = Number(formData.laborCost) || 0;
+    const totalPrice = Number(formData.totalPrice) || (pieceCost + laborCost);
+    const advancePaid = Number(formData.advancePaid) || 0;
+    const remDue = formData.remainingDue !== undefined ? Number(formData.remainingDue) : Math.max(0, totalPrice - advancePaid);
+
     const finalCreatedAt = formData.createdAt ? new Date(formData.createdAt).toISOString() : (repair?.createdAt || new Date().toISOString());
     const finalDeliveredAt = formData.status === 'delivered'
       ? (formData.deliveredAt ? new Date(formData.deliveredAt).toISOString() : (repair?.deliveredAt || finalCreatedAt))
