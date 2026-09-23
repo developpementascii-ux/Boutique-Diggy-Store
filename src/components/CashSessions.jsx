@@ -298,6 +298,7 @@ export default function CashSessions() {
           const amount = Math.abs(Number(trx.amount) || 0);
           rec.creditCollected += amount;
           rec.cashSales += amount;
+          rec.totalRevenue += amount;
           rec.creditsCount += 1;
           rec.creditsList.push({
             ...trx,
@@ -403,7 +404,7 @@ export default function CashSessions() {
     list.forEach((rec) => {
       rec.netCashInDrawer = rec.cashSales - rec.expensesCash;
       rec.netProfit = rec.grossProfit - rec.totalExpenses;
-      rec.marginRate = rec.totalRevenue > 0 ? Math.round((rec.grossProfit / rec.totalRevenue) * 100) : 0;
+      rec.marginRate = rec.totalRevenue > 0 ? Math.min(100, Math.max(0, Math.round((rec.grossProfit / rec.totalRevenue) * 100))) : 0;
     });
 
     return list;
@@ -430,7 +431,7 @@ export default function CashSessions() {
       totalExpensesCount += (r.expensesCount || 0);
       totalCashInflow += r.cashSales;
       totalCashExpenses += r.expensesCash;
-      totalSalesCount += (r.salesCount + r.repairsCount);
+      totalSalesCount += (r.salesCount + r.repairsCount + (r.creditsCount || 0));
       totalCreditCollected += (r.creditCollected || 0);
       totalCreditsCount += (r.creditsCount || 0);
 
@@ -462,7 +463,7 @@ export default function CashSessions() {
     });
 
     const totalCost = dailyRecords.reduce((acc, r) => acc + (r.totalCost || 0), 0);
-    const grossProfitMargin = totalRevenue > 0 ? Math.round((totalGrossProfit / totalRevenue) * 100) : 0;
+    const grossProfitMargin = totalRevenue > 0 ? Math.min(100, Math.max(0, Math.round((totalGrossProfit / totalRevenue) * 100))) : 0;
     const netProfit = totalGrossProfit - totalExpenses;
     const netProfitMargin = totalRevenue > 0 ? Math.round((netProfit / totalRevenue) * 100) : 0;
     const avgTicket = totalSalesCount > 0 ? (totalRevenue / totalSalesCount) : 0;
@@ -682,6 +683,15 @@ export default function CashSessions() {
             hasData = true;
             profit -= Number(e.amount) || 0;
           }
+        });
+        (clients || []).forEach((c) => {
+          (c.history || []).forEach((trx) => {
+            const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
+            if (isPayment && trx.date && getLocalDateKey(trx.date) === dateKey) {
+              hasData = true;
+              revenue += Math.abs(Number(trx.amount) || 0);
+            }
+          });
         });
         (repairs || []).forEach((r) => {
           const isDelivered = r.status === 'delivered';
@@ -1392,13 +1402,13 @@ export default function CashSessions() {
                           </div>
                         </td>
 
-                        {/* 5. Total Revenue (Sales) */}
+                        {/* 5. Total Revenue (Sales & Repairs & Credits) */}
                         <td>
                           <span className="privacy-blur" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
                             {formatMoney(rec.totalRevenue)}
                           </span>
                           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
-                            {rec.salesCount} ventes
+                            {rec.salesCount + rec.repairsCount + (rec.creditsCount || 0)} {t('operationsCount') || 'opérations'}
                           </span>
                         </td>
 
