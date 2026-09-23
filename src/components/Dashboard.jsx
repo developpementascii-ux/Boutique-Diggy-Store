@@ -229,13 +229,14 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
 
       const totalAmount = Number(rep.totalPrice) || 0;
       const advance = Number(rep.advancePaid) || 0;
+      const remainingDue = Number(rep.remainingDue || 0);
       const initialAdv = rep.initialAdvance !== undefined
         ? Number(rep.initialAdvance)
-        : (isDelivered ? Math.max(0, totalAmount - (Number(rep.remainingPaid) || 0)) : advance);
+        : advance;
 
       const remainingSettled = rep.remainingPaid !== undefined
         ? Number(rep.remainingPaid)
-        : Math.max(0, totalAmount - initialAdv);
+        : (isDelivered ? Math.max(0, totalAmount - initialAdv - remainingDue) : 0);
 
       const baseLabor = Number(rep.laborCost) > 0
         ? Number(rep.laborCost)
@@ -366,13 +367,16 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
     // Populate repair inflow & profit onto chart days
     repairs.forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
+      const totalAmount = Number(rep.totalPrice) || 0;
+      const advance = Number(rep.advancePaid) || 0;
+      const remainingDue = Number(rep.remainingDue || 0);
       const initialAdv = rep.initialAdvance !== undefined
         ? Number(rep.initialAdvance)
-        : (isDelivered ? Math.max(0, (Number(rep.totalPrice) || 0) - (Number(rep.remainingPaid) || 0)) : (Number(rep.advancePaid) || 0));
+        : advance;
 
       const remainingSettled = rep.remainingPaid !== undefined
         ? Number(rep.remainingPaid)
-        : Math.max(0, (Number(rep.totalPrice) || 0) - initialAdv);
+        : (isDelivered ? Math.max(0, totalAmount - initialAdv - remainingDue) : 0);
 
       const baseLabor = Number(rep.laborCost) > 0
         ? Number(rep.laborCost)
