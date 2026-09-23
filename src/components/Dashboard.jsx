@@ -231,9 +231,9 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
         return;
       }
 
-      const totalAmount = Number(rep.totalPrice || rep.finalCost || rep.estimatedCost || 0);
       const remainingDue = Number(rep.remainingDue || 0);
       const advance = Number(rep.advancePaid || rep.initialAdvance || rep.deposit || 0);
+      const totalAmount = Math.max(Number(rep.totalPrice || rep.finalCost || rep.estimatedCost || 0), advance + remainingDue);
       const paidRepairAmount = isDelivered
         ? Math.max(0, totalAmount - remainingDue)
         : (advance > 0 ? advance : Math.max(0, totalAmount - remainingDue));
@@ -348,9 +348,9 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
       if (!effectiveDate) return;
       const k = getLocalDateKey(effectiveDate);
       if (dailyMap[k]) {
-        const totalAmount = Number(rep.totalPrice || rep.finalCost || rep.estimatedCost || 0);
         const remainingDue = Number(rep.remainingDue || 0);
         const advance = Number(rep.advancePaid || rep.initialAdvance || rep.deposit || 0);
+        const totalAmount = Math.max(Number(rep.totalPrice || rep.finalCost || rep.estimatedCost || 0), advance + remainingDue);
         const paidRepairAmount = isDelivered
           ? Math.max(0, totalAmount - remainingDue)
           : (advance > 0 ? advance : Math.max(0, totalAmount - remainingDue));

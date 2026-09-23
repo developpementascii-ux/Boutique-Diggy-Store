@@ -139,11 +139,11 @@ export const mapRepairFromDB = (db) => {
     }
   }
 
-  const totalPrice = Number(db.final_cost || db.estimated_cost || 0);
   const advancePaid = Number(db.deposit || 0);
   const remainingDue = extra.remainingDue !== undefined
     ? Number(extra.remainingDue)
-    : Math.max(0, totalPrice - advancePaid);
+    : Math.max(0, (Number(db.final_cost || db.estimated_cost || 0)) - advancePaid);
+  const totalPrice = Math.max(Number(db.final_cost || db.estimated_cost || 0), advancePaid + remainingDue);
 
   const issueText = db.problem_description || extra.issueDescription || extra.problemDescription || '';
 

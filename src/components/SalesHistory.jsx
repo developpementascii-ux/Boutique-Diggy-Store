@@ -167,12 +167,12 @@ export default function SalesHistory({ onEditRepair }) {
     (repairs || []).forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
       const effectiveDate = rep.deliveredAt || rep.createdAt;
-      const totalAmount = Number(rep.totalPrice || rep.finalCost || rep.estimatedCost) || 0;
-      const remainingDue = rep.remainingDue !== undefined ? Number(rep.remainingDue) : (isDelivered ? 0 : Math.max(0, totalAmount - (Number(rep.advancePaid || rep.deposit || 0))));
       const advance = Number(rep.advancePaid || rep.initialAdvance || rep.deposit || 0);
-      const amountPaid = advance > 0
-        ? (isDelivered ? Math.max(0, totalAmount - remainingDue) : advance)
-        : Math.max(0, totalAmount - remainingDue);
+      const remainingDue = rep.remainingDue !== undefined ? Number(rep.remainingDue) : (isDelivered ? 0 : Math.max(0, (Number(rep.totalPrice || rep.finalCost || rep.estimatedCost) || 0) - advance));
+      const totalAmount = Math.max(Number(rep.totalPrice || rep.finalCost || rep.estimatedCost) || 0, advance + remainingDue);
+      const amountPaid = isDelivered
+        ? Math.max(0, totalAmount - remainingDue)
+        : (advance > 0 ? advance : Math.max(0, totalAmount - remainingDue));
 
       const baseLabor = Number(rep.laborCost) > 0
         ? Number(rep.laborCost)
