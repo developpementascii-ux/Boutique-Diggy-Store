@@ -935,13 +935,13 @@ export default function CashSessions() {
       {/* 2. EXECUTIVE 4 GLASS KPI METRIC CARDS (MATCHING DASHBOARD) */}
       <div className="glass-kpi-grid">
         
-        {/* KPI 1: Chiffre d'Affaires & Bénéfice Brut */}
+        {/* KPI 1: Chiffre d'Affaires */}
         <div className="glass-kpi-card">
           <div className="glass-kpi-glow" style={{ background: '#6366f1' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
             <div>
               <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                {t('revenueAndProfit') || "Chiffre d'Affaires & Bénéfice"}
+                {t('totalRevenue') || "Chiffre d'Affaires"}
               </span>
             </div>
             <div
@@ -960,7 +960,7 @@ export default function CashSessions() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', marginBottom: '0.5rem' }}>
+          <div style={{ marginBottom: '0.5rem' }}>
             {/* Chiffre d'Affaires */}
             <div style={{ background: 'rgba(99, 102, 241, 0.08)', padding: '0.35rem 0.5rem', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.18)' }}>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -971,22 +971,11 @@ export default function CashSessions() {
                 {formatMoney(periodSummary.totalRevenue)}
               </div>
             </div>
-
-            {/* Bénéfice Brut */}
-            <div style={{ background: 'rgba(16, 185, 129, 0.08)', padding: '0.35rem 0.5rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.18)' }}>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#34d399', display: 'inline-block' }}></span>
-                {t('grossProfit') || 'Bénéfice Net'}
-              </div>
-              <div className="profit-blur" style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399', marginTop: '0.15rem' }}>
-                +{formatMoney(periodSummary.totalGrossProfit)}
-              </div>
-            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
             <span>{periodSummary.totalSalesCount} {t('operationsCount') || 'opérations'} • {t('avgTicket') || 'Panier'}: <span className="privacy-blur">{formatMoney(periodSummary.avgTicket)}</span></span>
-            <span className="profit-blur" style={{ color: '#34d399', fontWeight: 700 }}>{t('marginRate') || 'Marge'}: {periodSummary.grossProfitMargin}%</span>
+            <span style={{ color: 'var(--text-muted)' }}>Période</span>
           </div>
         </div>
 

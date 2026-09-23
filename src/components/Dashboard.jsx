@@ -815,13 +815,13 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
       {/* 2. EXECUTIVE 4 GLASS KPI METRIC CARDS */}
       <div className="glass-kpi-grid">
         
-        {/* KPI 1: CA & Bénéfice Brut */}
+        {/* KPI 1: Chiffre d'Affaires */}
         <div className="glass-kpi-card">
           <div className="glass-kpi-glow" style={{ background: '#6366f1' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <span style={{ fontSize: '0.73rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block', lineHeight: 1.2 }}>
-                {isAdmin ? (t('revenueAndProfit') || "CA & Bénéfice Brut") : (t('totalRevenue') || "Chiffre d'Affaires")}
+                {t('totalRevenue') || "Chiffre d'Affaires"}
               </span>
             </div>
             <div
@@ -841,7 +841,7 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap: '0.45rem', marginBottom: '0.5rem' }}>
+          <div style={{ marginBottom: '0.5rem' }}>
             {/* Chiffre d'Affaires */}
             <div style={{ background: 'rgba(99, 102, 241, 0.08)', padding: '0.35rem 0.5rem', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.18)' }}>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -852,24 +852,11 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
                 {formatMoney(periodData.totalRev)}
               </div>
             </div>
-
-            {/* Bénéfice Brut (Admin Only) */}
-            {isAdmin && (
-              <div style={{ background: 'rgba(16, 185, 129, 0.08)', padding: '0.35rem 0.5rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.18)' }}>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#34d399', display: 'inline-block' }}></span>
-                  {t('grossProfit') || 'Bénéfice Net'}
-                </div>
-                <div className="profit-blur" style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399', marginTop: '0.15rem' }}>
-                  +{formatMoney(periodData.totalProf)}
-                </div>
-              </div>
-            )}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
             <span>{periodData.salesCount} {t('operationsCount') || 'ventes'} • {t('avgTicket') || 'Panier'}: <span className="privacy-blur">{formatMoney(periodData.avgTicket)}</span></span>
-            {isAdmin && <span className="profit-blur" style={{ color: '#34d399', fontWeight: 700 }}>{t('marginRate') || 'Marge'}: {periodData.marginRate}%</span>}
+            <span style={{ color: 'var(--text-muted)' }}>Période</span>
           </div>
         </div>
 
