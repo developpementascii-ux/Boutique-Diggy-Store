@@ -866,7 +866,9 @@ export default function Dashboard({ onNewSale, onNewRepair, onNewExpense, onSele
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
             <span>{periodData.salesCount} {t('operationsCount') || 'ventes'} • {t('avgTicket') || 'Panier'}: <span className="privacy-blur">{formatMoney(periodData.avgTicket)}</span></span>
-            <span style={{ color: 'var(--text-muted)' }}>Période</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+              🛒 {formatMoney(periodData.salesRev)} + 🔧 {formatMoney(periodData.repairsRev)} + 💰 {formatMoney(periodData.collectedCredit)}
+            </span>
           </div>
         </div>
 

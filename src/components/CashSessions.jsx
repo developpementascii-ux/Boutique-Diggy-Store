@@ -174,6 +174,8 @@ export default function CashSessions() {
         cashSales: 0,
         cardSales: 0,
         otherSales: 0,
+        salesRevenue: 0,
+        repairsRevenue: 0,
         creditCollected: 0,
         totalRevenue: 0,
         totalCost: 0,
@@ -235,6 +237,7 @@ export default function CashSessions() {
       const profit = Number(s.totalProfit) || 0;
       const cost = Number(s.totalCost) || (amount - profit);
 
+      rec.salesRevenue += amount;
       rec.totalRevenue += amount;
       rec.totalCost += cost;
       rec.grossProfit += profit;
@@ -340,6 +343,7 @@ export default function CashSessions() {
             const rec = recordsMap[createDateKey];
             if (!rec.repairsList.some((item) => item.id === rep.id && item.flowType === 'advance')) {
               if (initialAdv > 0) {
+                rec.repairsRevenue += initialAdv;
                 rec.totalRevenue += initialAdv;
                 rec.cashSales += initialAdv;
               }
@@ -383,6 +387,7 @@ export default function CashSessions() {
               );
 
               if (!hasClientCreditPayment && remainingSettled > 0) {
+                rec.repairsRevenue += remainingSettled;
                 rec.totalRevenue += remainingSettled;
                 rec.cashSales += remainingSettled;
               }
@@ -421,12 +426,18 @@ export default function CashSessions() {
     let totalCashInflow = 0;
     let totalCashExpenses = 0;
     let totalSalesCount = 0;
+    let totalCounterSales = 0;
+    let totalRepairsRevenue = 0;
     let totalCreditCollected = 0;
     let totalCreditsCount = 0;
     let profitableDaysCount = 0;
     let lossDaysCount = 0;
 
     dailyRecords.forEach((r) => {
+      totalCounterSales += (r.salesRevenue || 0);
+      totalRepairsRevenue += (r.repairsRevenue || 0);
+      totalCreditCollected += (r.creditCollected || 0);
+      totalCreditsCount += (r.creditsCount || 0);
       totalRevenue += r.totalRevenue;
       totalGrossProfit += r.grossProfit;
       totalExpenses += r.totalExpenses;
@@ -434,8 +445,6 @@ export default function CashSessions() {
       totalCashInflow += r.cashSales;
       totalCashExpenses += r.expensesCash;
       totalSalesCount += (r.salesCount + r.repairsCount + (r.creditsCount || 0));
-      totalCreditCollected += (r.creditCollected || 0);
-      totalCreditsCount += (r.creditsCount || 0);
 
       if (r.netProfit > 0) profitableDaysCount++;
       else if (r.netProfit < 0) lossDaysCount++;
@@ -508,6 +517,8 @@ export default function CashSessions() {
 
     return {
       totalRevenue,
+      totalCounterSales,
+      totalRepairsRevenue,
       totalCost,
       totalGrossProfit,
       grossProfitMargin,
@@ -527,7 +538,7 @@ export default function CashSessions() {
       lossDaysCount,
       daysCount: dailyRecords.length,
     };
-  }, [dailyRecords, sales, repairs]);
+  }, [dailyRecords, sales, repairs, clients]);
 
   // All Live Movements across period for the movements tab
   const allMovements = useMemo(() => {
@@ -977,7 +988,9 @@ export default function CashSessions() {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
             <span>{periodSummary.totalSalesCount} {t('operationsCount') || 'opérations'} • {t('avgTicket') || 'Panier'}: <span className="privacy-blur">{formatMoney(periodSummary.avgTicket)}</span></span>
-            <span style={{ color: 'var(--text-muted)' }}>Période</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+              🛒 {formatMoney(periodSummary.totalCounterSales)} + 🔧 {formatMoney(periodSummary.totalRepairsRevenue)} + 💰 {formatMoney(periodSummary.totalCreditCollected)}
+            </span>
           </div>
         </div>
 
