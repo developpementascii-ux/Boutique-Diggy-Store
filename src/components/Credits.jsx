@@ -16,6 +16,9 @@ import {
   TrendingUp,
   ArrowDownRight,
   Clock,
+  Download,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 import ClientModal from './ClientModal';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
@@ -30,6 +33,7 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
     deleteClientTransaction,
     t,
     lang,
+    settings,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,6 +41,12 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
   const [filterMode, setFilterMode] = useState('with_debt'); // 'with_debt', 'all', 'settled'
   const [dateFilter, setDateFilter] = useState('all'); // 'all', 'today', 'yesterday', '7d', '30d', 'custom'
   const [customDate, setCustomDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  // Export State (Excel, CSV, TXT)
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportScope, setExportScope] = useState('current'); // 'current', 'date', 'all', 'client'
+  const [exportSpecificDate, setExportSpecificDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [exportFormat, setExportFormat] = useState('excel'); // 'excel', 'csv', 'txt'
 
   // Modal State for Edit/Create client or transaction
   const [modalState, setModalState] = useState({
@@ -224,6 +234,537 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
     );
   }, [periodStats.collectedList, collectedSearch, searchQuery]);
 
+  // Extract clean local date YYYY-MM-DD
+  const getLocalDateKey = (d) => {
+    if (!d) return '';
+    if (typeof d === 'string') {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) return d.trim();
+      const parsed = new Date(d);
+      if (!isNaN(parsed.getTime())) {
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const day = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+    }
+    if (d instanceof Date && !isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+    return '';
+  };
+
+  // Helper to trigger browser download
+  const downloadFile = (content, filename, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Build export dataset according to chosen scope
+  const getExportData = (scope, specificDate) => {
+    const shopName = settings?.shopName || 'Boutique Diggy Store';
+    const shopPhone = settings?.phone || '';
+    const now = new Date();
+    const dateStr = now.toLocaleDateString(localeCode);
+    const timeStr = now.toLocaleTimeString(localeCode, { hour: '2-digit', minute: '2-digit' });
+
+    if (scope === 'client' && selectedClient) {
+      const history = clientHistory || [];
+      const chronoHistory = [...history].sort((a, b) => new Date(a.date) - new Date(b.date));
+      let running = 0;
+      const ledgerRows = chronoHistory.map((trx) => {
+        const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
+        const amt = Math.abs(Number(trx.amount) || 0);
+        const debit = isPayment ? 0 : amt;
+        const credit = isPayment ? amt : 0;
+        running += isPayment ? -amt : amt;
+        return {
+          date: trx.date ? new Date(trx.date).toLocaleString(localeCode) : '—',
+          type: isPayment ? (t('opTypeCredit') || 'Règlement') : (t('opTypeSale') || 'Dette / Achat'),
+          note: trx.note || (trx.referenceId ? `Réf: ${trx.referenceId}` : '—'),
+          debit,
+          credit,
+          balance: running,
+        };
+      });
+
+      return {
+        type: 'client_statement',
+        title: `RELEVÉ DE COMPTE CLIENT : ${selectedClient.name.toUpperCase()}`,
+        subtitle: `Téléphone: ${selectedClient.phone || '—'} • Adresse: ${selectedClient.address || '—'} • Édité le ${dateStr} à ${timeStr}`,
+        filenamePrefix: `releve_client_${selectedClient.name.replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_')}_${getLocalDateKey(now)}`,
+        shopName,
+        shopPhone,
+        client: selectedClient,
+        ledgerRows,
+        currentBalance: Number(selectedClient.totalDebt !== undefined ? selectedClient.totalDebt : (selectedClient.debt || 0)),
+      };
+    }
+
+    if (scope === 'date') {
+      const targetDate = specificDate || exportSpecificDate || getLocalDateKey(now);
+      const targetDateLabel = new Date(targetDate + 'T12:00:00').toLocaleDateString(localeCode, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+
+      const movements = [];
+      let totalNewDebt = 0;
+      let totalCollected = 0;
+
+      clients.forEach((c) => {
+        (c.history || []).forEach((trx) => {
+          if (trx.date && getLocalDateKey(trx.date) === targetDate) {
+            const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
+            const amt = Math.abs(Number(trx.amount) || 0);
+            if (isPayment) {
+              totalCollected += amt;
+            } else {
+              totalNewDebt += amt;
+            }
+            movements.push({
+              clientName: c.name,
+              clientPhone: c.phone || '—',
+              time: trx.date ? new Date(trx.date).toLocaleTimeString(localeCode, { hour: '2-digit', minute: '2-digit' }) : '—',
+              fullDate: trx.date ? new Date(trx.date).toLocaleString(localeCode) : '—',
+              type: isPayment ? (t('collectedCredit') || 'Règlement perçu') : (t('grantedCredit') || 'Crédit accordé'),
+              isPayment,
+              note: trx.note || trx.referenceId || 'Opération de caisse',
+              amount: amt,
+            });
+          }
+        });
+      });
+
+      return {
+        type: 'date_report',
+        title: `JOURNAL DES CRÉDITS & RÈGLEMENTS DU ${targetDateLabel.toUpperCase()}`,
+        subtitle: `${shopName} • Date ciblée: ${targetDate} • Édité le ${dateStr} à ${timeStr}`,
+        filenamePrefix: `credits_dettes_${targetDate}`,
+        shopName,
+        shopPhone,
+        targetDate,
+        targetDateLabel,
+        movements,
+        totalNewDebt,
+        totalCollected,
+        netChange: totalNewDebt - totalCollected,
+      };
+    }
+
+    if (scope === 'all') {
+      const clientRows = clients.map((c) => {
+        const lastTrx = c.history && c.history[0];
+        const debt = Number(c.totalDebt !== undefined ? c.totalDebt : (c.debt || 0));
+        return {
+          name: c.name,
+          phone: c.phone || '—',
+          address: c.address || '—',
+          debt,
+          status: debt > 0 ? 'Débiteur' : 'Soldé',
+          opsCount: c.history?.length || 0,
+          lastTrxDate: lastTrx?.date ? new Date(lastTrx.date).toLocaleDateString(localeCode) : '—',
+          lastTrxNote: lastTrx?.note || '—',
+        };
+      }).sort((a, b) => b.debt - a.debt);
+
+      const totalDebt = clientRows.reduce((acc, c) => acc + c.debt, 0);
+      const debtorCount = clientRows.filter((c) => c.debt > 0).length;
+
+      return {
+        type: 'all_clients',
+        title: `ÉTAT COMPLET DES COMPTES CLIENTS & DETTES DÉBITRICES`,
+        subtitle: `${shopName} • Date d'édition: ${dateStr} à ${timeStr} • ${debtorCount} débiteurs sur ${clientRows.length} clients`,
+        filenamePrefix: `credits_dettes_complet_${getLocalDateKey(now)}`,
+        shopName,
+        shopPhone,
+        clientRows,
+        totalDebt,
+        debtorCount,
+        totalClientsCount: clientRows.length,
+      };
+    }
+
+    // Default: 'current' (Filtre actuel)
+    if (filterMode === 'collected') {
+      const items = filteredCollectedList.map((trx) => ({
+        clientName: trx.clientName,
+        clientPhone: trx.clientPhone || '—',
+        date: trx.date ? new Date(trx.date).toLocaleString(localeCode) : '—',
+        note: trx.note || trx.referenceId || 'Règlement espèces',
+        amount: Number(trx.paidAmount || trx.amount || 0),
+      }));
+
+      const totalAmount = items.reduce((acc, it) => acc + it.amount, 0);
+
+      return {
+        type: 'current_collected',
+        title: `RÈGLEMENTS DE CRÉDITS COLLECTÉS (FILTRE ACTUEL)`,
+        subtitle: `${shopName} • Période: ${dateFilter} ${searchQuery ? `• Recherche: "${searchQuery}"` : ''} • Édité le ${dateStr}`,
+        filenamePrefix: `credits_collectes_${getLocalDateKey(now)}`,
+        shopName,
+        shopPhone,
+        items,
+        totalAmount,
+      };
+    } else {
+      const clientRows = filteredClients.map((c) => {
+        const lastTrx = c.history && c.history[0];
+        const debt = Number(c.totalDebt !== undefined ? c.totalDebt : (c.debt || 0));
+        return {
+          name: c.name,
+          phone: c.phone || '—',
+          debt,
+          status: debt > 0 ? 'Débiteur' : 'Soldé',
+          opsCount: c.history?.length || 0,
+          lastTrxDate: lastTrx?.date ? new Date(lastTrx.date).toLocaleDateString(localeCode) : '—',
+          lastTrxNote: lastTrx?.note || '—',
+        };
+      }).sort((a, b) => b.debt - a.debt);
+
+      const totalDebt = clientRows.reduce((acc, c) => acc + c.debt, 0);
+
+      return {
+        type: 'current_filter',
+        title: `CRÉDITS CLIENTS & DETTES DÉBITRICES (FILTRE ACTUEL)`,
+        subtitle: `${shopName} • Mode: ${filterMode} • Période: ${dateFilter} ${searchQuery ? `• Recherche: "${searchQuery}"` : ''} • Édité le ${dateStr}`,
+        filenamePrefix: `credits_dettes_filtre_${getLocalDateKey(now)}`,
+        shopName,
+        shopPhone,
+        clientRows,
+        totalDebt,
+        clientCount: clientRows.length,
+      };
+    }
+  };
+
+  // Build CSV format string
+  const buildCsvContent = (data) => {
+    let csv = '\uFEFF'; // UTF-8 BOM for Microsoft Excel
+    if (data.type === 'client_statement') {
+      csv += `"Date & Heure";"Type";"Motif / Référence";"Débit (Dette DT)";"Crédit (Règlement DT)";"Solde Restant (DT)"\r\n`;
+      data.ledgerRows.forEach((r) => {
+        csv += `"${r.date}";"${r.type}";"${r.note}";"${r.debit > 0 ? r.debit.toFixed(3) : ''}";"${r.credit > 0 ? r.credit.toFixed(3) : ''}";"${r.balance.toFixed(3)}"\r\n`;
+      });
+      csv += `\r\n"";"";"";"";"SOLDE DÛ ACTUEL :";"${data.currentBalance.toFixed(3)} DT"\r\n`;
+    } else if (data.type === 'date_report') {
+      csv += `"Heure";"Date";"Client";"Téléphone";"Type";"Motif / Référence";"Montant (DT)"\r\n`;
+      data.movements.forEach((m) => {
+        const sign = m.isPayment ? '-' : '+';
+        csv += `"${m.time}";"${m.fullDate}";"${m.clientName}";"${m.clientPhone}";"${m.type}";"${m.note}";"${sign}${m.amount.toFixed(3)}"\r\n`;
+      });
+      csv += `\r\n"";"";"";"";"NOUVEAUX CRÉDITS ACCORDÉS :";"+${data.totalNewDebt.toFixed(3)} DT"\r\n`;
+      csv += `"";"";"";"";"RÈGLEMENTS COLLECTÉS :";"-${data.totalCollected.toFixed(3)} DT"\r\n`;
+      csv += `"";"";"";"";"VARIATION NETTE :";"${data.netChange >= 0 ? '+' : ''}${data.netChange.toFixed(3)} DT"\r\n`;
+    } else if (data.type === 'current_collected') {
+      csv += `"Date & Heure";"Client";"Téléphone";"Motif / Référence";"Montant Perçu (DT)"\r\n`;
+      data.items.forEach((it) => {
+        csv += `"${it.date}";"${it.clientName}";"${it.clientPhone}";"${it.note}";"${it.amount.toFixed(3)}"\r\n`;
+      });
+      csv += `\r\n"";"";"";"TOTAL RÈGLEMENTS COLLECTÉS :";"${data.totalAmount.toFixed(3)} DT"\r\n`;
+    } else {
+      csv += `"Client";"Téléphone";"Nb Opérations";"Dernière Dette Date";"Dernière Dette Note";"Statut";"Solde Dû (DT)"\r\n`;
+      (data.clientRows || []).forEach((c) => {
+        csv += `"${c.name}";"${c.phone}";"${c.opsCount}";"${c.lastTrxDate}";"${c.lastTrxNote}";"${c.status}";"${c.debt.toFixed(3)}"\r\n`;
+      });
+      csv += `\r\n"";"";"";"";"";"TOTAL DETTES CUMULÉES :";"${data.totalDebt.toFixed(3)} DT"\r\n`;
+    }
+    return csv;
+  };
+
+  // Build Excel-ready HTML table
+  const buildExcelHtml = (data) => {
+    let tableHtml = '';
+    if (data.type === 'client_statement') {
+      tableHtml = `
+        <table>
+          <thead>
+            <tr>
+              <th style="background-color:#4f46e5;color:#fff;">Date & Heure</th>
+              <th style="background-color:#4f46e5;color:#fff;">Type d'Opération</th>
+              <th style="background-color:#4f46e5;color:#fff;">Motif / Référence</th>
+              <th style="background-color:#4f46e5;color:#fff;text-align:right;">Débit (Dette +)</th>
+              <th style="background-color:#4f46e5;color:#fff;text-align:right;">Crédit (Paiement -)</th>
+              <th style="background-color:#4f46e5;color:#fff;text-align:right;">Solde Restant</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.ledgerRows.map((r) => `
+              <tr>
+                <td>${r.date}</td>
+                <td>${r.type}</td>
+                <td>${r.note}</td>
+                <td style="text-align:right;color:#dc2626;">${r.debit > 0 ? formatMoney(r.debit) : '—'}</td>
+                <td style="text-align:right;color:#16a34a;">${r.credit > 0 ? '-' + formatMoney(r.credit) : '—'}</td>
+                <td style="text-align:right;font-weight:bold;color:${r.balance > 0 ? '#dc2626' : '#16a34a'};">${formatMoney(r.balance)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background-color:#f1f5f9;font-weight:bold;border-top:2px solid #4f46e5;">
+              <td colspan="5" style="text-align:right;">SOLDE DÛ ACTUEL :</td>
+              <td style="text-align:right;color:${data.currentBalance > 0 ? '#dc2626' : '#16a34a'};">${formatMoney(data.currentBalance)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    } else if (data.type === 'date_report') {
+      tableHtml = `
+        <table>
+          <thead>
+            <tr>
+              <th style="background-color:#2563eb;color:#fff;">Heure</th>
+              <th style="background-color:#2563eb;color:#fff;">Client</th>
+              <th style="background-color:#2563eb;color:#fff;">Téléphone</th>
+              <th style="background-color:#2563eb;color:#fff;">Type</th>
+              <th style="background-color:#2563eb;color:#fff;">Motif / Réf</th>
+              <th style="background-color:#2563eb;color:#fff;text-align:right;">Montant</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.movements.length === 0 ? '<tr><td colspan="6" style="text-align:center;">Aucun mouvement ce jour-là</td></tr>' : data.movements.map((m) => `
+              <tr>
+                <td>${m.time}</td>
+                <td style="font-weight:bold;">${m.clientName}</td>
+                <td>${m.clientPhone}</td>
+                <td>${m.type}</td>
+                <td>${m.note}</td>
+                <td style="text-align:right;font-weight:bold;color:${m.isPayment ? '#16a34a' : '#dc2626'};">
+                  ${m.isPayment ? '-' : '+'}${formatMoney(m.amount)}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background-color:#f1f5f9;font-weight:bold;">
+              <td colspan="5" style="text-align:right;">NOUVEAUX CRÉDITS ACCORDÉS :</td>
+              <td style="text-align:right;color:#dc2626;">+${formatMoney(data.totalNewDebt)}</td>
+            </tr>
+            <tr style="background-color:#f1f5f9;font-weight:bold;">
+              <td colspan="5" style="text-align:right;">RÈGLEMENTS COLLECTÉS :</td>
+              <td style="text-align:right;color:#16a34a;">-${formatMoney(data.totalCollected)}</td>
+            </tr>
+            <tr style="background-color:#e2e8f0;font-weight:bold;border-top:2px solid #2563eb;">
+              <td colspan="5" style="text-align:right;">VARIATION NETTE DU JOUR :</td>
+              <td style="text-align:right;color:${data.netChange > 0 ? '#dc2626' : '#16a34a'};">
+                ${data.netChange >= 0 ? '+' : ''}${formatMoney(data.netChange)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    } else if (data.type === 'current_collected') {
+      tableHtml = `
+        <table>
+          <thead>
+            <tr>
+              <th style="background-color:#10b981;color:#fff;">Date & Heure</th>
+              <th style="background-color:#10b981;color:#fff;">Client</th>
+              <th style="background-color:#10b981;color:#fff;">Téléphone</th>
+              <th style="background-color:#10b981;color:#fff;">Motif / Référence</th>
+              <th style="background-color:#10b981;color:#fff;text-align:right;">Montant Perçu</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.items.map((it) => `
+              <tr>
+                <td>${it.date}</td>
+                <td style="font-weight:bold;">${it.clientName}</td>
+                <td>${it.clientPhone}</td>
+                <td>${it.note}</td>
+                <td style="text-align:right;font-weight:bold;color:#16a34a;">+${formatMoney(it.amount)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background-color:#f1f5f9;font-weight:bold;border-top:2px solid #10b981;">
+              <td colspan="4" style="text-align:right;">TOTAL RÈGLEMENTS COLLECTÉS :</td>
+              <td style="text-align:right;color:#16a34a;">+${formatMoney(data.totalAmount)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    } else {
+      tableHtml = `
+        <table>
+          <thead>
+            <tr>
+              <th style="background-color:#2563eb;color:#fff;">Client</th>
+              <th style="background-color:#2563eb;color:#fff;">Téléphone</th>
+              <th style="background-color:#2563eb;color:#fff;">Nb Opérations</th>
+              <th style="background-color:#2563eb;color:#fff;">Dernier Mouvement</th>
+              <th style="background-color:#2563eb;color:#fff;">Statut</th>
+              <th style="background-color:#2563eb;color:#fff;text-align:right;">Solde Dû (DT)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(data.clientRows || []).map((c) => `
+              <tr>
+                <td style="font-weight:bold;">${c.name}</td>
+                <td>${c.phone}</td>
+                <td style="text-align:center;">${c.opsCount}</td>
+                <td>${c.lastTrxDate !== '—' ? `${c.lastTrxDate} (${c.lastTrxNote})` : '—'}</td>
+                <td style="color:${c.debt > 0 ? '#dc2626' : '#16a34a'};font-weight:bold;">${c.status}</td>
+                <td style="text-align:right;font-weight:bold;color:${c.debt > 0 ? '#dc2626' : '#16a34a'};">
+                  ${formatMoney(c.debt)}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background-color:#f1f5f9;font-weight:bold;border-top:2px solid #2563eb;">
+              <td colspan="5" style="text-align:right;">TOTAL DETTES CUMULÉES :</td>
+              <td style="text-align:right;color:#dc2626;">${formatMoney(data.totalDebt)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    }
+
+    return `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8">
+        <style>
+          body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; font-size: 11pt; padding: 10px; }
+          table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+          th { border: 1px solid #94a3b8; padding: 8px 12px; font-weight: bold; }
+          td { border: 1px solid #cbd5e1; padding: 6px 10px; }
+          .header-title { font-size: 15pt; font-weight: bold; color: #1e293b; margin-bottom: 3px; }
+          .header-sub { font-size: 9.5pt; color: #64748b; margin-bottom: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="header-title">${data.title}</div>
+        <div class="header-sub">${data.subtitle}</div>
+        ${tableHtml}
+      </body>
+      </html>
+    `;
+  };
+
+  // Build Text report
+  const buildTxtReport = (data) => {
+    let txt = '';
+    txt += '================================================================================\n';
+    txt += `  ${data.title.toUpperCase()}\n`;
+    txt += `  ${data.subtitle}\n`;
+    txt += '================================================================================\n\n';
+
+    if (data.type === 'client_statement') {
+      txt += String('DATE & HEURE').padEnd(20) + ' ' +
+             String('TYPE').padEnd(16) + ' ' +
+             String('MOTIF / RÉFÉRENCE').padEnd(22) + ' ' +
+             String('DÉBIT (+)').padStart(10) + ' ' +
+             String('CRÉDIT (-)').padStart(10) + '\n';
+      txt += '-'.repeat(82) + '\n';
+      data.ledgerRows.forEach((r) => {
+        const dt = String(r.date).substring(0, 19).padEnd(20);
+        const typ = String(r.type).substring(0, 15).padEnd(16);
+        const not = String(r.note).substring(0, 21).padEnd(22);
+        const deb = (r.debit > 0 ? formatMoney(r.debit) : '—').padStart(10);
+        const crd = (r.credit > 0 ? '-' + formatMoney(r.credit) : '—').padStart(10);
+        txt += `${dt} ${typ} ${not} ${deb} ${crd}\n`;
+      });
+      txt += '-'.repeat(82) + '\n';
+      txt += `SOLDE DÛ ACTUEL DU CLIENT : ${formatMoney(data.currentBalance)}\n`;
+    } else if (data.type === 'date_report') {
+      txt += String('HEURE').padEnd(8) + ' ' +
+             String('CLIENT').padEnd(22) + ' ' +
+             String('CONTACT').padEnd(14) + ' ' +
+             String('TYPE').padEnd(18) + ' ' +
+             String('MONTANT').padStart(14) + '\n';
+      txt += '-'.repeat(80) + '\n';
+      if (data.movements.length === 0) {
+        txt += '  Aucun mouvement enregistré à cette date.\n';
+      } else {
+        data.movements.forEach((m) => {
+          const hr = String(m.time).padEnd(8);
+          const cl = String(m.clientName).substring(0, 20).padEnd(22);
+          const ph = String(m.clientPhone).substring(0, 12).padEnd(14);
+          const tp = String(m.type).substring(0, 16).padEnd(18);
+          const amt = ((m.isPayment ? '-' : '+') + formatMoney(m.amount)).padStart(14);
+          txt += `${hr} ${cl} ${ph} ${tp} ${amt}\n`;
+        });
+      }
+      txt += '-'.repeat(80) + '\n';
+      txt += `NOUVEAUX CRÉDITS ACCORDÉS : +${formatMoney(data.totalNewDebt)}\n`;
+      txt += `RÈGLEMENTS COLLECTÉS      : -${formatMoney(data.totalCollected)}\n`;
+      txt += `VARIATION NETTE DU JOUR   : ${data.netChange >= 0 ? '+' : ''}${formatMoney(data.netChange)}\n`;
+    } else if (data.type === 'current_collected') {
+      txt += String('DATE & HEURE').padEnd(20) + ' ' +
+             String('CLIENT').padEnd(24) + ' ' +
+             String('CONTACT').padEnd(14) + ' ' +
+             String('MONTANT PERÇU').padStart(18) + '\n';
+      txt += '-'.repeat(80) + '\n';
+      data.items.forEach((it) => {
+        const dt = String(it.date).substring(0, 19).padEnd(20);
+        const cl = String(it.clientName).substring(0, 22).padEnd(24);
+        const ph = String(it.clientPhone).substring(0, 12).padEnd(14);
+        const amt = ('+' + formatMoney(it.amount)).padStart(18);
+        txt += `${dt} ${cl} ${ph} ${amt}\n`;
+      });
+      txt += '-'.repeat(80) + '\n';
+      txt += `TOTAL RÈGLEMENTS COLLECTÉS: ${data.items.length}\n`;
+      txt += `MONTANT TOTAL ENCAISSÉ    : +${formatMoney(data.totalAmount)}\n`;
+    } else {
+      txt += String('CLIENT').padEnd(26) + ' ' +
+             String('CONTACT').padEnd(14) + ' ' +
+             String('OPÉRATIONS').padEnd(12) + ' ' +
+             String('STATUT').padEnd(12) + ' ' +
+             String('SOLDE DÛ (DT)').padStart(14) + '\n';
+      txt += '-'.repeat(82) + '\n';
+      (data.clientRows || []).forEach((c) => {
+        const cl = String(c.name).substring(0, 24).padEnd(26);
+        const ph = String(c.phone).substring(0, 12).padEnd(14);
+        const op = String(c.opsCount).padEnd(12);
+        const st = String(c.status).padEnd(12);
+        const db = formatMoney(c.debt).padStart(14);
+        txt += `${cl} ${ph} ${op} ${st} ${db}\n`;
+      });
+      txt += '-'.repeat(82) + '\n';
+      txt += `TOTAL CLIENTS LISTÉS : ${(data.clientRows || []).length}\n`;
+      txt += `TOTAL DETTES CUMULÉES: ${formatMoney(data.totalDebt)}\n`;
+    }
+
+    txt += '================================================================================\n';
+    return txt;
+  };
+
+  // Execute export trigger
+  const executeExport = (format, scope, specificDate) => {
+    const data = getExportData(scope, specificDate);
+
+    if (format === 'excel') {
+      const htmlContent = buildExcelHtml(data);
+      downloadFile(htmlContent, `${data.filenamePrefix}.xls`, 'application/vnd.ms-excel;charset=utf-8');
+    } else if (format === 'csv') {
+      const csvContent = buildCsvContent(data);
+      downloadFile(csvContent, `${data.filenamePrefix}.csv`, 'text/csv;charset=utf-8');
+    } else {
+      const txtContent = buildTxtReport(data);
+      downloadFile(txtContent, `${data.filenamePrefix}.txt`, 'text/plain;charset=utf-8');
+    }
+
+    setExportModalOpen(false);
+    toast.success(
+      lang === 'ar'
+        ? 'تم تصدير وتنزيل الملف بنجاح!'
+        : 'Fichier exporté et téléchargé avec succès !'
+    );
+  };
+
   // Open modal to confirm client account deletion
   const requestDeleteClient = (client) => {
     setDeleteConfirmState({
@@ -309,6 +850,27 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
             <span className="badge badge-green" style={{ fontSize: '0.75rem', padding: '0.1rem 0.45rem', fontWeight: 800 }}>
               +{formatMoney(periodStats.collectedAmount)}
             </span>
+          </button>
+
+          {/* Button to Export (Excel / TXT) */}
+          <button
+            className="btn btn-outline"
+            onClick={() => {
+              setExportScope(selectedClient ? 'client' : 'current');
+              setExportModalOpen(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.6rem 1.05rem',
+              fontWeight: 700,
+              borderRadius: '8px',
+            }}
+            title="Exporter les crédits et dettes (Excel / TXT)"
+          >
+            <Download size={18} />
+            <span>{t('exportCreditsBtn') || 'Exporter (Excel / TXT)'}</span>
           </button>
 
           <button
@@ -765,6 +1327,18 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
                 )}
               </div>
               <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                {/* Export Client Statement */}
+                <button
+                  className="btn-icon btn-secondary btn-sm"
+                  onClick={() => {
+                    setExportScope('client');
+                    setExportModalOpen(true);
+                  }}
+                  title="Exporter le relevé de ce client (Excel / TXT)"
+                >
+                  <Download size={15} />
+                </button>
+
                 {/* Edit Client */}
                 <button
                   className="btn-icon btn-secondary btn-sm"
@@ -1001,9 +1575,23 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
                   </span>
                 </div>
               </div>
-              <button className="btn-icon btn-outline btn-sm" onClick={() => setShowCollectedModal(false)}>
-                ✕
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <button
+                  className="btn btn-outline btn-sm"
+                  style={{ fontSize: '0.75rem', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                  onClick={() => {
+                    setExportScope('current');
+                    setExportModalOpen(true);
+                  }}
+                  title="Exporter la liste des crédits collectés"
+                >
+                  <Download size={13} />
+                  <span>{t('export') || 'Exporter'}</span>
+                </button>
+                <button className="btn-icon btn-outline btn-sm" onClick={() => setShowCollectedModal(false)}>
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div className="modal-body" style={{ padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -1122,6 +1710,279 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
             <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowCollectedModal(false)}>
                 {t('close') || 'Fermer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comprehensive Export Modal (Excel, CSV, TXT) */}
+      {exportModalOpen && (
+        <div className="modal-overlay" onClick={() => setExportModalOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ padding: '0.45rem', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.12)', color: 'var(--accent-primary)', display: 'flex' }}>
+                  <Download size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {t('exportCreditsModalTitle') || 'Exporter les Crédits & Dettes'}
+                  </h3>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Exportation des comptes débiteurs, historiques et règlements
+                  </span>
+                </div>
+              </div>
+              <button className="btn-icon btn-outline btn-sm" onClick={() => setExportModalOpen(false)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1.25rem' }}>
+              {/* 1. Scope Selection */}
+              <div>
+                <label className="form-label" style={{ fontWeight: 700, marginBottom: '0.5rem', display: 'block', fontSize: '0.85rem' }}>
+                  {t('exportScopeLabel') || 'Périmètre des données :'}
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {/* Scope: Current Filter */}
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.65rem',
+                      padding: '0.7rem 0.85rem',
+                      borderRadius: '8px',
+                      border: exportScope === 'current' ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                      background: exportScope === 'current' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="exportScope"
+                      checked={exportScope === 'current'}
+                      onChange={() => setExportScope('current')}
+                      style={{ marginTop: '0.2rem' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '0.88rem', display: 'block', color: 'var(--text-primary)' }}>
+                        {t('exportScopeCurrent') || 'Filtre actuel à l’écran'}
+                      </strong>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {filterMode === 'collected'
+                          ? `${filteredCollectedList.length} règlements collectés`
+                          : `${filteredClients.length} clients affichés`} • Période: {dateFilter} {searchQuery ? `• Recherche: "${searchQuery}"` : ''}
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* Scope: Specific Date */}
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.65rem',
+                      padding: '0.7rem 0.85rem',
+                      borderRadius: '8px',
+                      border: exportScope === 'date' ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                      background: exportScope === 'date' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="exportScope"
+                      checked={exportScope === 'date'}
+                      onChange={() => setExportScope('date')}
+                      style={{ marginTop: '0.2rem' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <strong style={{ fontSize: '0.88rem', display: 'block', color: 'var(--text-primary)' }}>
+                        {t('exportScopeDate') || 'Date spécifique'}
+                      </strong>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Mouvements de dettes et règlements d'un jour précis
+                      </span>
+                      {exportScope === 'date' && (
+                        <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <Calendar size={15} style={{ color: 'var(--accent-primary)' }} />
+                          <input
+                            type="date"
+                            className="input"
+                            value={exportSpecificDate}
+                            onChange={(e) => setExportSpecificDate(e.target.value)}
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.85rem', width: 'auto' }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </label>
+
+                  {/* Scope: All */}
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.65rem',
+                      padding: '0.7rem 0.85rem',
+                      borderRadius: '8px',
+                      border: exportScope === 'all' ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                      background: exportScope === 'all' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="exportScope"
+                      checked={exportScope === 'all'}
+                      onChange={() => setExportScope('all')}
+                      style={{ marginTop: '0.2rem' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '0.88rem', display: 'block', color: 'var(--text-primary)' }}>
+                        {t('exportScopeAll') || 'Tous les comptes & dettes (Complet)'}
+                      </strong>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {clients.length} clients enregistrés • Total dettes boutique: {formatMoney(totalClientsDebt)}
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* Scope: Selected Client */}
+                  {selectedClient && (
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.65rem',
+                        padding: '0.7rem 0.85rem',
+                        borderRadius: '8px',
+                        border: exportScope === 'client' ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                        background: exportScope === 'client' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="exportScope"
+                        checked={exportScope === 'client'}
+                        onChange={() => setExportScope('client')}
+                        style={{ marginTop: '0.2rem' }}
+                      />
+                      <div>
+                        <strong style={{ fontSize: '0.88rem', display: 'block', color: 'var(--text-primary)' }}>
+                          {t('exportScopeClient') || 'Relevé du client sélectionné'} : {selectedClient.name}
+                        </strong>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          Solde dû : {formatMoney(selectedClient.totalDebt || 0)} • {clientHistory.length} opérations
+                        </span>
+                      </div>
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              {/* 2. Format Selection */}
+              <div>
+                <label className="form-label" style={{ fontWeight: 700, marginBottom: '0.5rem', display: 'block', fontSize: '0.85rem' }}>
+                  {t('exportFormatLabel') || 'Format d’exportation :'}
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.65rem' }}>
+                  <div
+                    onClick={() => setExportFormat('excel')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: exportFormat === 'excel' ? '2px solid #10b981' : '1px solid var(--border-color)',
+                      background: exportFormat === 'excel' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <FileSpreadsheet size={22} style={{ color: '#10b981' }} />
+                    <div>
+                      <strong style={{ fontSize: '0.85rem', display: 'block', color: 'var(--text-primary)' }}>
+                        Excel (.xls)
+                      </strong>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        Mise en forme & totaux
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setExportFormat('csv')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: exportFormat === 'csv' ? '2px solid #0ea5e9' : '1px solid var(--border-color)',
+                      background: exportFormat === 'csv' ? 'rgba(14, 165, 233, 0.1)' : 'var(--bg-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <FileSpreadsheet size={22} style={{ color: '#0ea5e9' }} />
+                    <div>
+                      <strong style={{ fontSize: '0.85rem', display: 'block', color: 'var(--text-primary)' }}>
+                        Tableur (.csv)
+                      </strong>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        Standard séparateur ;
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setExportFormat('txt')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: exportFormat === 'txt' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
+                      background: exportFormat === 'txt' ? 'rgba(139, 92, 246, 0.1)' : 'var(--bg-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <FileText size={22} style={{ color: '#8b5cf6' }} />
+                    <div>
+                      <strong style={{ fontSize: '0.85rem', display: 'block', color: 'var(--text-primary)' }}>
+                        Texte (.txt)
+                      </strong>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        Rapport texte imprimable
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', padding: '0.85rem 1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+              <button className="btn btn-outline" onClick={() => setExportModalOpen(false)}>
+                {t('cancel') || 'Annuler'}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => executeExport(exportFormat, exportScope, exportSpecificDate)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}
+              >
+                <Download size={16} />
+                <span>{t('exportActionDownload') || 'Télécharger le fichier'}</span>
               </button>
             </div>
           </div>
