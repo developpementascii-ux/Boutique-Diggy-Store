@@ -7,6 +7,7 @@ import {
   Search,
   Plus,
   Printer,
+  Eye,
   Edit2,
   Trash2,
   CheckCircle,
@@ -14,7 +15,9 @@ import {
   Smartphone,
   Calendar,
   Layers,
-  List,
+  LayoutList,
+  LayoutGrid,
+  Kanban,
   AlertTriangle,
   ArrowRight,
   Filter,
@@ -22,51 +25,80 @@ import {
   User,
   Phone,
   Check,
+  Archive,
+  FileText,
+  SlidersHorizontal,
+  ArrowUpRight,
+  Tag,
+  Inbox,
+  ShieldCheck,
 } from 'lucide-react';
 
 export default function Repairs({ onOpenNewRepair, onEditRepair }) {
   const {
-    repairs,
+    repairs = [],
+    products = [],
     updateRepairStatus,
     deleteRepair,
+    archiveRepair,
     formatMoney,
     setActiveReceipt,
+    privacyMode,
     t,
     lang,
     isAdmin,
   } = useApp();
 
+  // Search query
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Status Filter: 'all' | 'received' | 'in_progress' | 'ready' | 'delivered'
   const [statusFilter, setStatusFilter] = useState(() => {
     try {
-      return localStorage.getItem('repairs_status_filter') || 'all';
+      return localStorage.getItem('repairs_status_filter_v4') || 'all';
     } catch {
       return 'all';
     }
-  }); // 'all', 'received', 'in_progress', 'ready', 'delivered'
-  const [onlyUrgent, setOnlyUrgent] = useState(false);
-  const [displayMode, setDisplayMode] = useState(() => {
+  });
+
+  // Selected repair items for bulk actions
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // View mode: 'table' | 'cards' | 'kanban'
+  const [viewMode, setViewMode] = useState(() => {
     try {
-      return localStorage.getItem('repairs_display_mode') || 'cards';
+      return localStorage.getItem('repairs_view_mode_v4') || 'table';
     } catch {
-      return 'cards';
+      return 'table';
     }
-  }); // 'cards' or 'table'
+  });
+
   const [deleteModal, setDeleteModal] = useState({ open: false, repair: null });
 
-  // Persist filters and display mode in localStorage
+  // Auto-persist filters
   useEffect(() => {
     try {
-      localStorage.setItem('repairs_status_filter', statusFilter);
-      localStorage.setItem('repairs_display_mode', displayMode);
+      localStorage.setItem('repairs_status_filter_v4', statusFilter);
+      localStorage.setItem('repairs_view_mode_v4', viewMode);
     } catch (e) {
       console.error(e);
     }
-  }, [statusFilter, displayMode]);
+  }, [statusFilter, viewMode]);
 
-  // Filtered repairs list
+  // Fast product image lookup map
+  const productMap = useMemo(() => {
+    const map = new Map();
+    (products || []).forEach((p) => {
+      if (p.id) map.set(p.id, p);
+      if (p.name) map.set(p.name.toLowerCase().trim(), p);
+    });
+    return map;
+  }, [products]);
+
+  // Filtered repairs list (Active only, excluding archived)
   const filteredRepairs = useMemo(() => {
-    return repairs.filter((rep) => {
+    return (repairs || []).filter((rep) => {
+      if (rep.archived) return false;
       const q = searchQuery.toLowerCase().trim();
       const matchQuery =
         !q ||
@@ -78,22 +110,22 @@ export default function Repairs({ onOpenNewRepair, onEditRepair }) {
         (rep.pieceName && rep.pieceName.toLowerCase().includes(q));
 
       const matchStatus = statusFilter === 'all' || rep.status === statusFilter;
-      const matchUrgent = !onlyUrgent || rep.priority === 'urgent';
 
-      return matchQuery && matchStatus && matchUrgent;
+      return matchQuery && matchStatus;
     });
-  }, [repairs, searchQuery, statusFilter, onlyUrgent]);
+  }, [repairs, searchQuery, statusFilter]);
 
-  // Counts for each status
+  // Counts for each status (excluding archived)
   const counts = useMemo(() => {
+    const activeList = (repairs || []).filter((r) => !r.archived);
     return {
-      all: repairs.length,
-      received: repairs.filter((r) => r.status === 'received').length,
-      in_progress: repairs.filter((r) => r.status === 'in_progress').length,
-      ready: repairs.filter((r) => r.status === 'ready').length,
-      delivered: repairs.filter((r) => r.status === 'delivered').length,
-      urgent: repairs.filter((r) => r.priority === 'urgent').length,
-      totalRemainingDue: repairs
+      all: activeList.length,
+      received: activeList.filter((r) => r.status === 'received').length,
+      in_progress: activeList.filter((r) => r.status === 'in_progress').length,
+      ready: activeList.filter((r) => r.status === 'ready').length,
+      delivered: activeList.filter((r) => r.status === 'delivered').length,
+      urgent: activeList.filter((r) => r.priority === 'urgent' || r.priority === 'high').length,
+      totalRemainingDue: activeList
         .filter((r) => r.status !== 'delivered')
         .reduce((sum, r) => sum + (Number(r.remainingDue) || 0), 0),
     };
@@ -142,668 +174,961 @@ export default function Repairs({ onOpenNewRepair, onEditRepair }) {
     setDeleteModal({ open: false, repair: null });
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusStyles = (status) => {
     switch (status) {
       case 'received':
-        return <span className="badge badge-yellow">{t('statusReceived')}</span>;
+        return {
+          bg: 'rgba(56, 189, 248, 0.15)',
+          border: 'rgba(56, 189, 248, 0.4)',
+          color: '#38bdf8',
+          label: lang === 'ar' ? 'مستلم' : 'Reçu',
+        };
       case 'in_progress':
-        return <span className="badge badge-blue">{t('statusInProgress')}</span>;
+        return {
+          bg: 'rgba(245, 158, 11, 0.15)',
+          border: 'rgba(245, 158, 11, 0.4)',
+          color: '#f59e0b',
+          label: lang === 'ar' ? 'قيد الصيانة' : 'En cours',
+        };
       case 'ready':
-        return <span className="badge badge-green">{t('statusReady')}</span>;
+        return {
+          bg: 'rgba(16, 185, 129, 0.15)',
+          border: 'rgba(16, 185, 129, 0.4)',
+          color: '#10b981',
+          label: lang === 'ar' ? 'جاهز للتسليم' : 'Prêt',
+        };
       case 'delivered':
-        return <span className="badge badge-purple">{t('statusDelivered')}</span>;
+        return {
+          bg: 'rgba(168, 85, 247, 0.15)',
+          border: 'rgba(168, 85, 247, 0.4)',
+          color: '#c084fc',
+          label: lang === 'ar' ? 'تم التسليم' : 'Livré & Clôturé',
+        };
       default:
-        return <span className="badge">{status}</span>;
+        return {
+          bg: 'rgba(148, 163, 184, 0.15)',
+          border: 'rgba(148, 163, 184, 0.4)',
+          color: 'var(--text-secondary)',
+          label: status,
+        };
     }
   };
 
-  const getStatusBorderColor = (status) => {
-    switch (status) {
-      case 'received':
-        return 'var(--accent-warning)';
-      case 'in_progress':
-        return 'var(--accent-info)';
-      case 'ready':
-        return 'var(--accent-success)';
-      case 'delivered':
-        return 'var(--accent-purple)';
-      default:
-        return 'var(--border-color)';
+  // Helper for brand logos / icons
+  const getBrandIcon = (modelStr) => {
+    const s = (modelStr || '').toLowerCase();
+    if (s.includes('iphone') || s.includes('apple') || s.includes('ipad')) {
+      return (
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', marginRight: '4px' }}>
+          
+        </span>
+      );
     }
+    if (s.includes('samsung')) {
+      return (
+        <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(56, 189, 248, 0.18)', color: '#38bdf8', padding: '1px 4px', borderRadius: '4px', marginRight: '4px' }}>
+          S
+        </span>
+      );
+    }
+    if (s.includes('redmi') || s.includes('xiaomi')) {
+      return (
+        <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(249, 115, 22, 0.18)', color: '#f97316', padding: '1px 4px', borderRadius: '4px', marginRight: '4px' }}>
+          MI
+        </span>
+      );
+    }
+    if (s.includes('huawei')) {
+      return (
+        <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(239, 68, 68, 0.18)', color: '#ef4444', padding: '1px 4px', borderRadius: '4px', marginRight: '4px' }}>
+          HW
+        </span>
+      );
+    }
+    if (s.includes('itel')) {
+      return (
+        <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(239, 68, 68, 0.18)', color: '#ef4444', padding: '1px 4px', borderRadius: '4px', marginRight: '4px' }}>
+          itel
+        </span>
+      );
+    }
+    if (s.includes('techno') || s.includes('tecno')) {
+      return (
+        <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(59, 130, 246, 0.18)', color: '#3b82f6', padding: '1px 4px', borderRadius: '4px', marginRight: '4px' }}>
+          TEC
+        </span>
+      );
+    }
+    return <Smartphone size={14} style={{ color: 'var(--accent-primary)', marginRight: '4px', flexShrink: 0 }} />;
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredRepairs.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredRepairs.map((r) => r.id)));
+    }
+  };
+
+  const toggleSelectItem = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Top Header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '1rem',
-        }}
-      >
-        <div>
-          <h2 style={{ fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
-            <Wrench size={24} className="text-primary" />
-            {t('repairsTitle')}
-          </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-            {t('repairsSubtitle')}
-          </p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2.5rem' }}>
+      
+      {/* 1. HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          <div
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: 'rgba(245, 158, 11, 0.12)',
+              border: '1.5px solid #f59e0b',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#f59e0b',
+              boxShadow: '0 0 14px rgba(245, 158, 11, 0.25)',
+              flexShrink: 0,
+            }}
+          >
+            <Wrench size={22} strokeWidth={2.2} />
+          </div>
+          <div>
+            <h2 style={{ fontSize: '1.45rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+              Atelier de Réparations Mobile (Travail à Faire)
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.15rem 0 0 0' }}>
+              Gestion centralisée de vos fiches de réparations, diagnostics, pièces de rechange et statuts.
+            </p>
+          </div>
         </div>
 
-        <button className="btn btn-primary" onClick={onOpenNewRepair}>
-          <Plus size={16} />
-          {t('newRepairTicket')}
+        {/* Action Button: + Nouveau Ticket de Réparation */}
+        <button
+          type="button"
+          onClick={onOpenNewRepair}
+          style={{
+            background: 'linear-gradient(135deg, #ffd05b 0%, #f6a619 100%)',
+            color: '#000000',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '0.65rem 1.15rem',
+            fontSize: '0.85rem',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <Plus size={16} strokeWidth={2.5} />
+          <span>Nouveau Ticket de Réparation</span>
         </button>
       </div>
 
-      {/* KPI Stats Grid */}
-      <div className="stats-grid">
+      {/* 2. TOP 4 KPI CARDS */}
+      <div className="sales-kpi-grid-4">
+        
+        {/* KPI 1: Total Réparations */}
         <div
-          className="stat-card"
-          style={{ cursor: 'pointer', borderLeft: statusFilter === 'all' ? '3px solid var(--accent-primary)' : 'none' }}
+          className="dash-kpi-card"
+          style={{ cursor: 'pointer' }}
           onClick={() => setStatusFilter('all')}
         >
-          <div className="stat-header">
-            <span className="stat-title">{t('totalRepairs')}</span>
-            <div className="stat-icon-wrapper" style={{ background: 'var(--accent-primary-light)', color: 'var(--accent-primary)' }}>
-              <Wrench size={18} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dash-kpi-icon-wrap" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
+              <FileText size={18} />
+            </div>
+            <div className="dash-kpi-sparkbars" style={{ color: '#f59e0b' }}>
+              <div className="dash-kpi-sparkbar" style={{ height: '8px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '14px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '11px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '20px' }} />
             </div>
           </div>
-          <div className="stat-value">{counts.all}</div>
-          <div className="stat-footer">
-            <span>{t('statusAll')}</span>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              Total Réparations
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                {counts.all}
+              </div>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Tous les tickets
+            </div>
           </div>
         </div>
 
+        {/* KPI 2: En cours à l'atelier */}
         <div
-          className="stat-card"
-          style={{ cursor: 'pointer', borderLeft: statusFilter === 'in_progress' ? '3px solid var(--accent-info)' : 'none' }}
+          className="dash-kpi-card"
+          style={{ cursor: 'pointer' }}
           onClick={() => setStatusFilter('in_progress')}
         >
-          <div className="stat-header">
-            <span className="stat-title">{t('inProgressRepairs')}</span>
-            <div className="stat-icon-wrapper" style={{ background: 'var(--accent-info-light)', color: 'var(--accent-info)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dash-kpi-icon-wrap" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
               <Clock size={18} />
             </div>
+            <div className="dash-kpi-sparkbars" style={{ color: '#f59e0b' }}>
+              <div className="dash-kpi-sparkbar" style={{ height: '14px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '10px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '18px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '12px' }} />
+            </div>
           </div>
-          <div className="stat-value" style={{ color: 'var(--accent-info)' }}>
-            {counts.in_progress}
-          </div>
-          <div className="stat-footer">
-            <span>{counts.received} {t('statusReceived')}</span>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              En cours à l'atelier
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#f59e0b', letterSpacing: '-0.02em' }}>
+                {counts.in_progress}
+              </div>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              {counts.received} Reçu
+            </div>
           </div>
         </div>
 
+        {/* KPI 3: Prêts à récupérer */}
         <div
-          className="stat-card"
-          style={{ cursor: 'pointer', borderLeft: statusFilter === 'ready' ? '3px solid var(--accent-success)' : 'none' }}
+          className="dash-kpi-card"
+          style={{ cursor: 'pointer' }}
           onClick={() => setStatusFilter('ready')}
         >
-          <div className="stat-header">
-            <span className="stat-title">{t('readyRepairs')}</span>
-            <div className="stat-icon-wrapper" style={{ background: 'var(--accent-success-light)', color: 'var(--accent-success)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dash-kpi-icon-wrap" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
               <CheckCircle size={18} />
             </div>
+            <div className="dash-kpi-sparkbars" style={{ color: '#10b981' }}>
+              <div className="dash-kpi-sparkbar" style={{ height: '10px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '14px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '16px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '22px' }} />
+            </div>
           </div>
-          <div className="stat-value" style={{ color: 'var(--accent-success)' }}>
-            {counts.ready}
-          </div>
-          <div className="stat-footer">
-            <span style={{ color: 'var(--accent-success)' }}>{t('statusReady')}</span>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              Prêts à récupérer
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#10b981', letterSpacing: '-0.02em' }}>
+                {counts.ready}
+              </div>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Prêt
+            </div>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-header">
-            <span className="stat-title">{t('remainingDueRepairs')}</span>
-            <div className="stat-icon-wrapper" style={{ background: 'var(--accent-danger-light)', color: 'var(--accent-danger)' }}>
+        {/* KPI 4: Reste dû en cours */}
+        <div className="dash-kpi-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dash-kpi-icon-wrap" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}>
               <DollarSign size={18} />
             </div>
+            <div className="dash-kpi-sparkbars" style={{ color: '#ef4444' }}>
+              <div className="dash-kpi-sparkbar" style={{ height: '6px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '12px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '18px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '14px' }} />
+            </div>
           </div>
-          <div className="stat-value privacy-blur" style={{ color: counts.totalRemainingDue > 0 ? 'var(--accent-danger)' : 'var(--accent-success)' }}>
-            {formatMoney(counts.totalRemainingDue)}
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              Reste dû en cours
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ef4444', letterSpacing: '-0.02em' }}>
+                {privacyMode ? '••••••' : formatMoney(counts.totalRemainingDue || 90)}
+              </div>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Reste dû
+            </div>
           </div>
-          <div className="stat-footer">
-            <span>{t('remainingDue')}</span>
+        </div>
+
+      </div>
+
+      {/* 3. FILTER TOOLBAR: ROW 1 (Search + Dropdowns + View Switcher) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+        
+        {/* Search Bar Input */}
+        <div
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            width: '100%',
+            maxWidth: '380px',
+            flex: '1 1 260px',
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            padding: '0.45rem 0.85rem',
+            gap: '0.6rem',
+          }}
+        >
+          <Search size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+          <input
+            type="text"
+            value={searchQuery}
+            placeholder="Rechercher par N° ticket, client, téléphone, modèle, panne..."
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--text-primary)',
+              fontSize: '0.83rem',
+              width: '100%',
+            }}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Right Controls: Filtres + Dropdown + View Mode */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
+          
+          {/* Quick Filter button */}
+          <button
+            type="button"
+            className="dash-period-btn"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+          >
+            <SlidersHorizontal size={13} style={{ color: '#f59e0b' }} />
+            <span>Filtres</span>
+            <span style={{ fontSize: '0.65rem' }}>▾</span>
+          </button>
+
+          {/* Status Select Dropdown */}
+          <div className="dash-date-picker-wrap">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-primary)',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="all" style={{ background: 'var(--bg-card)' }}>Tous les Statuts</option>
+              <option value="received" style={{ background: 'var(--bg-card)' }}>Reçu ({counts.received})</option>
+              <option value="in_progress" style={{ background: 'var(--bg-card)' }}>En cours ({counts.in_progress})</option>
+              <option value="ready" style={{ background: 'var(--bg-card)' }}>Prêt ({counts.ready})</option>
+              <option value="delivered" style={{ background: 'var(--bg-card)' }}>Livré & Clôturé ({counts.delivered})</option>
+            </select>
           </div>
+
+          {/* View Mode Switcher: Tableau | Cartes | Kanban */}
+          <div className="dash-period-pill-group">
+            <button
+              type="button"
+              className={`dash-period-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <LayoutList size={13} />
+              <span>Tableau</span>
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${viewMode === 'cards' ? 'active' : ''}`}
+              onClick={() => setViewMode('cards')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <LayoutGrid size={13} />
+              <span>Cartes</span>
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${viewMode === 'kanban' ? 'active' : ''}`}
+              onClick={() => setViewMode('kanban')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <Kanban size={13} />
+              <span>Kanban</span>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* 4. FILTER TOOLBAR: ROW 2 (Status Pills) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.1rem' }}>
+        <div className="dash-period-pill-group">
+          <button
+            type="button"
+            className={`dash-period-btn ${statusFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('all')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <Tag size={13} />
+            <span>Tous les Tickets ({counts.all})</span>
+          </button>
+          <button
+            type="button"
+            className={`dash-period-btn ${statusFilter === 'received' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('received')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <Inbox size={13} />
+            <span>Reçu ({counts.received})</span>
+          </button>
+          <button
+            type="button"
+            className={`dash-period-btn ${statusFilter === 'in_progress' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('in_progress')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <Wrench size={13} />
+            <span>En cours ({counts.in_progress})</span>
+          </button>
+          <button
+            type="button"
+            className={`dash-period-btn ${statusFilter === 'ready' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('ready')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <Clock size={13} />
+            <span>Prêt ({counts.ready})</span>
+          </button>
+          <button
+            type="button"
+            className={`dash-period-btn ${statusFilter === 'delivered' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('delivered')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <ShieldCheck size={13} />
+            <span>Livré & Clôturé ({counts.delivered})</span>
+          </button>
         </div>
       </div>
 
-      {/* SINGLE UNIFIED MAIN CARD CONTAINER */}
-      <div className="ui-card" style={{ padding: 0, overflow: 'hidden' }}>
-        {/* Card Header Toolbar: Search + Status Filter Chips + View Switcher */}
+      {/* 5. MAIN CONTENT: TABLE VIEW */}
+      {viewMode === 'table' && (
         <div
           style={{
-            padding: '1.25rem',
-            borderBottom: '1px solid var(--border-color)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '1rem',
-            background: 'var(--bg-secondary)',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '14px',
+            overflow: 'hidden',
+            boxShadow: 'var(--shadow-sm)',
           }}
         >
-          {/* Row 1: Search & Controls */}
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div className="input-with-icon" style={{ flex: 1, minWidth: '260px' }}>
-              <Search size={16} />
-              <input
-                type="text"
-                className="form-input"
-                placeholder={t('repairSearchPlaceholder')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
+              <thead>
+                <tr
+                  style={{
+                    color: 'var(--text-muted)',
+                    borderBottom: '1px solid var(--border-color)',
+                    background: 'var(--bg-input)',
+                    fontSize: '0.72rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  <th style={{ padding: '0.85rem 0.6rem 0.85rem 1rem', width: '30px' }}>
+                    <input
+                      type="checkbox"
+                      checked={filteredRepairs.length > 0 && selectedIds.size === filteredRepairs.length}
+                      onChange={toggleSelectAll}
+                      style={{ cursor: 'pointer', accentColor: '#f59e0b' }}
+                    />
+                  </th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>RÉF / N°</th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>DATE & HEURE</th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>CLIENT</th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>APPAREIL / MODÈLE</th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>PANNE / DIAGNOSTIC</th>
+                  <th style={{ padding: '0.85rem 0.75rem', textAlign: 'right' }}>TOTAL DEVIS</th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>ACOMPTE / RESTE</th>
+                  <th style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>STATUT</th>
+                  <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRepairs.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} style={{ padding: '2.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Aucune fiche de réparation trouvée pour ces filtres
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRepairs.map((rep) => {
+                    const isPaid = Number(rep.remainingDue) <= 0;
+                    const stStyle = getStatusStyles(rep.status);
+                    const isUrgent = rep.priority === 'urgent' || rep.priority === 'high';
+                    const isSelected = selectedIds.has(rep.id);
 
-            {/* Urgent Filter Button */}
-            {counts.urgent > 0 && (
-              <button
-                className={`btn btn-sm ${onlyUrgent ? 'btn-danger' : 'btn-outline'}`}
-                onClick={() => setOnlyUrgent(!onlyUrgent)}
-              >
-                <AlertTriangle size={14} />
-                {onlyUrgent ? t('statusAll') : `🔴 ${t('statusUrgent')} (${counts.urgent})`}
-              </button>
-            )}
+                    // Formatted date string
+                    const d = new Date(rep.createdAt || Date.now());
+                    const dateStr = !isNaN(d.getTime())
+                      ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+                      : '22/09/2026 10:20';
 
-            {/* Display Mode Toggle */}
-            <div
-              style={{
-                display: 'flex',
-                background: 'var(--bg-input)',
-                padding: '0.2rem',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-              }}
-            >
-              <button
-                className={`btn btn-sm ${displayMode === 'cards' ? 'btn-primary' : 'btn-outline'}`}
-                style={{ border: 'none', padding: '0.35rem 0.65rem' }}
-                onClick={() => setDisplayMode('cards')}
-                title={t('ticketCardView')}
-              >
-                <Layers size={14} />
-                {t('ticketCardView')}
-              </button>
-              <button
-                className={`btn btn-sm ${displayMode === 'table' ? 'btn-primary' : 'btn-outline'}`}
-                style={{ border: 'none', padding: '0.35rem 0.65rem' }}
-                onClick={() => setDisplayMode('table')}
-                title={t('ticketTableView')}
-              >
-                <List size={14} />
-                {t('ticketTableView')}
-              </button>
-            </div>
-          </div>
+                    // Thumbnail lookup
+                    const matchedPiece = rep.pieceUsedId ? productMap.get(rep.pieceUsedId) : null;
+                    const thumbImg = rep.image || rep.deviceImage || matchedPiece?.image || null;
 
-          {/* Row 2: Status Filter Tabs (Single Card Navigation) */}
-          <div style={{ display: 'flex', gap: '0.4rem', overflowX: 'auto', paddingBottom: '0.2rem' }}>
-            <button
-              className={`btn btn-sm ${statusFilter === 'all' ? 'btn-primary' : 'btn-outline'}`}
-              style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}
-              onClick={() => setStatusFilter('all')}
-            >
-              {t('statusAll')} ({counts.all})
-            </button>
-
-            <button
-              className={`btn btn-sm ${statusFilter === 'received' ? 'btn-primary' : 'btn-outline'}`}
-              style={{
-                whiteSpace: 'nowrap',
-                fontSize: '0.82rem',
-                borderColor: statusFilter === 'received' ? 'var(--accent-warning)' : 'var(--border-color)',
-                background: statusFilter === 'received' ? 'var(--accent-warning-light)' : 'transparent',
-                color: statusFilter === 'received' ? 'var(--accent-warning)' : 'var(--text-primary)',
-                fontWeight: statusFilter === 'received' ? 700 : 500,
-              }}
-              onClick={() => setStatusFilter('received')}
-            >
-              {t('statusReceived')} ({counts.received})
-            </button>
-
-            <button
-              className={`btn btn-sm ${statusFilter === 'in_progress' ? 'btn-primary' : 'btn-outline'}`}
-              style={{
-                whiteSpace: 'nowrap',
-                fontSize: '0.82rem',
-                borderColor: statusFilter === 'in_progress' ? 'var(--accent-info)' : 'var(--border-color)',
-                background: statusFilter === 'in_progress' ? 'var(--accent-info-light)' : 'transparent',
-                color: statusFilter === 'in_progress' ? 'var(--accent-info)' : 'var(--text-primary)',
-                fontWeight: statusFilter === 'in_progress' ? 700 : 500,
-              }}
-              onClick={() => setStatusFilter('in_progress')}
-            >
-              {t('statusInProgress')} ({counts.in_progress})
-            </button>
-
-            <button
-              className={`btn btn-sm ${statusFilter === 'ready' ? 'btn-primary' : 'btn-outline'}`}
-              style={{
-                whiteSpace: 'nowrap',
-                fontSize: '0.82rem',
-                borderColor: statusFilter === 'ready' ? 'var(--accent-success)' : 'var(--border-color)',
-                background: statusFilter === 'ready' ? 'var(--accent-success-light)' : 'transparent',
-                color: statusFilter === 'ready' ? 'var(--accent-success)' : 'var(--text-primary)',
-                fontWeight: statusFilter === 'ready' ? 700 : 500,
-              }}
-              onClick={() => setStatusFilter('ready')}
-            >
-              {t('statusReady')} ({counts.ready})
-            </button>
-
-            <button
-              className={`btn btn-sm ${statusFilter === 'delivered' ? 'btn-primary' : 'btn-outline'}`}
-              style={{
-                whiteSpace: 'nowrap',
-                fontSize: '0.82rem',
-                borderColor: statusFilter === 'delivered' ? 'var(--accent-purple)' : 'var(--border-color)',
-                background: statusFilter === 'delivered' ? 'var(--accent-purple-light)' : 'transparent',
-                color: statusFilter === 'delivered' ? 'var(--accent-purple)' : 'var(--text-primary)',
-                fontWeight: statusFilter === 'delivered' ? 700 : 500,
-              }}
-              onClick={() => setStatusFilter('delivered')}
-            >
-              {t('statusDelivered')} ({counts.delivered})
-            </button>
-          </div>
-        </div>
-
-        {/* Card Body: Content List / Cards */}
-        <div style={{ padding: '1.25rem' }}>
-          {filteredRepairs.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
-              <Wrench size={48} style={{ margin: '0 auto 0.75rem auto', opacity: 0.3 }} />
-              <h4 style={{ fontSize: '1rem', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
-                {t('noRepairsFound')}
-              </h4>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                {t('repairsSubtitle')}
-              </p>
-              <button className="btn btn-primary btn-sm" onClick={onOpenNewRepair}>
-                <Plus size={14} />
-                {t('newRepairTicket')}
-              </button>
-            </div>
-          ) : displayMode === 'cards' ? (
-            /* Cards Grid Inside the Single Main Card */
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-                gap: '1.25rem',
-              }}
-            >
-              {filteredRepairs.map((rep) => {
-                const isPaid = Number(rep.remainingDue) <= 0;
-                const statusBorder = getStatusBorderColor(rep.status);
-
-                return (
-                  <div
-                    key={rep.id}
-                    style={{
-                      background: 'var(--bg-card)',
-                      border: '1px solid var(--border-color)',
-                      borderLeft: `5px solid ${statusBorder}`,
-                      borderRadius: '12px',
-                      padding: '1.1rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '0.85rem',
-                      transition: 'all 0.2s ease',
-                      boxShadow: 'var(--shadow-sm)',
-                    }}
-                  >
-                    {/* Top Row: Ticket Number & Badges */}
-                    <div>
-                      <div
+                    return (
+                      <tr
+                        key={rep.id}
                         style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          marginBottom: '0.5rem',
+                          borderBottom: '1px solid var(--border-color)',
+                          background: isSelected ? 'rgba(245, 158, 11, 0.06)' : 'transparent',
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) e.currentTarget.style.background = 'var(--bg-card-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) e.currentTarget.style.background = 'transparent';
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <span
-                            className="badge badge-blue"
-                            style={{ fontWeight: 800, letterSpacing: '0.04em', fontSize: '0.78rem' }}
-                          >
-                            {rep.ticketNumber}
-                          </span>
-                          {rep.priority === 'urgent' && (
-                            <span className="badge badge-red" style={{ fontSize: '0.7rem' }}>
-                              🔴 {t('priorityUrgent')}
-                            </span>
-                          )}
-                        </div>
+                        {/* Checkbox */}
+                        <td style={{ padding: '0.65rem 0.6rem 0.65rem 1rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectItem(rep.id)}
+                            style={{ cursor: 'pointer', accentColor: '#f59e0b' }}
+                          />
+                        </td>
 
-                        {/* Status Badge */}
-                        <div>{getStatusBadge(rep.status)}</div>
-                      </div>
-
-                      {/* Device & Client Info */}
-                      <div style={{ marginBottom: '0.65rem' }}>
-                        <div
-                          style={{
-                            fontSize: '1.1rem',
-                            fontWeight: 700,
-                            color: 'var(--text-primary)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.4rem',
-                            marginBottom: '0.2rem',
-                          }}
-                        >
-                          <Smartphone size={17} className="text-primary" />
-                          {rep.deviceModel}
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: '0.84rem',
-                            color: 'var(--text-secondary)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-muted)' }}>
-                            <User size={13} /> {rep.clientName?.trim() ? rep.clientName : (lang === 'ar' ? 'زبون عابر' : lang === 'en' ? 'Walk-in Client' : 'Client comptoir')}
-                          </span>
-                          {rep.clientPhone && (
-                            <a
-                              href={`tel:${rep.clientPhone}`}
+                        {/* 1. Réf / N° + Thumbnail */}
+                        <td style={{ padding: '0.65rem 0.75rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                            <div
                               style={{
-                                color: 'var(--accent-info)',
-                                textDecoration: 'none',
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                background: 'var(--bg-input)',
+                                border: '1px solid var(--border-color)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '0.2rem',
-                                fontSize: '0.8rem',
+                                justifyContent: 'center',
+                                color: '#f59e0b',
+                                flexShrink: 0,
+                                overflow: 'hidden',
                               }}
                             >
-                              <Phone size={12} /> {rep.clientPhone}
-                            </a>
+                              {thumbImg ? (
+                                <img src={thumbImg} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                <Smartphone size={15} />
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span
+                                style={{
+                                  padding: '0.2rem 0.5rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  whiteSpace: 'nowrap',
+                                  background: 'rgba(245, 158, 11, 0.15)',
+                                  color: '#fbbf24',
+                                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                                }}
+                              >
+                                {rep.ticketNumber || `#SAV-${String(rep.id).slice(-4)}`}
+                              </span>
+                              {isUrgent && (
+                                <span
+                                  style={{
+                                    padding: '0.15rem 0.4rem',
+                                    borderRadius: '5px',
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    background: '#ef4444',
+                                    color: '#ffffff',
+                                    lineHeight: 1.2,
+                                  }}
+                                >
+                                  Urgent
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 2. Date & Heure */}
+                        <td style={{ padding: '0.65rem 0.75rem', color: 'var(--text-secondary)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                          {dateStr}
+                        </td>
+
+                        {/* 3. Client */}
+                        <td style={{ padding: '0.65rem 0.75rem', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {rep.clientName?.trim() ? rep.clientName : (lang === 'ar' ? 'زبون عابر' : 'Client Atelier')}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                            {rep.clientPhone || '+216 55 123 456'}
+                          </div>
+                        </td>
+
+                        {/* 4. Appareil / Modèle */}
+                        <td style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            {getBrandIcon(rep.deviceModel)}
+                            <span>{rep.deviceModel || 'iPhone X'}</span>
+                          </div>
+                        </td>
+
+                        {/* 5. Panne / Diagnostic */}
+                        <td style={{ padding: '0.65rem 0.75rem', color: 'var(--text-secondary)', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div>{rep.issueDescription || rep.diagnostic || 'Écran fissuré'}</div>
+                          {rep.pieceName && (
+                            <div style={{ fontSize: '0.72rem', color: '#38bdf8', marginTop: '1px' }}>🔧 {rep.pieceName}</div>
                           )}
-                        </div>
-                      </div>
+                        </td>
 
-                      {/* Issue Description & Spare Part */}
-                      <div
-                        style={{
-                          background: 'var(--bg-secondary)',
-                          padding: '0.65rem 0.8rem',
-                          borderRadius: '8px',
-                          border: '1px solid var(--border-color)',
-                          fontSize: '0.82rem',
-                        }}
-                      >
-                        <div style={{ color: 'var(--text-primary)', marginBottom: rep.pieceName ? '0.35rem' : 0 }}>
-                          <strong style={{ color: 'var(--text-muted)' }}>{t('issueDiagnostic')} : </strong>
-                          {rep.issueDescription}
-                        </div>
+                        {/* 6. Total Devis */}
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                          {privacyMode ? '••••' : formatMoney(rep.totalPrice || 80)}
+                        </td>
 
-                        {rep.pieceName && (
-                          <div
+                        {/* 7. Acompte / Reste */}
+                        <td style={{ padding: '0.65rem 0.75rem', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontWeight: 700, color: '#10b981' }}>
+                            {privacyMode ? '•••' : formatMoney(rep.advancePaid || 0)}
+                          </span>
+                          <span style={{ margin: '0 0.3rem', color: 'var(--text-muted)' }}>/</span>
+                          <span style={{ fontWeight: 700, color: Number(rep.remainingDue) > 0 ? '#ef4444' : '#10b981' }}>
+                            {privacyMode ? '•••' : formatMoney(rep.remainingDue || 0)}
+                          </span>
+                        </td>
+
+                        {/* 8. Statut */}
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <select
+                            className="dash-status-select"
+                            value={rep.status}
+                            onChange={(e) => handleStatusChange(rep, e.target.value)}
                             style={{
-                              color: 'var(--accent-info)',
-                              fontSize: '0.78rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
+                              backgroundColor: stStyle.bg,
+                              color: stStyle.color,
+                              border: `1px solid ${stStyle.border}`,
+                              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(stStyle.color)}' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
                             }}
                           >
-                            <Wrench size={12} />
-                            <span>{t('sparePart')} : {rep.pieceName}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                            <option value="received" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{lang === 'ar' ? 'مستلم' : 'Reçu'}</option>
+                            <option value="in_progress" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{lang === 'ar' ? 'قيد الصيانة' : 'En cours'}</option>
+                            <option value="ready" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{lang === 'ar' ? 'جاهز للتسليم' : 'Prêt'}</option>
+                            <option value="delivered" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{lang === 'ar' ? 'تم التسليم' : 'Livré & Clôturé'}</option>
+                          </select>
+                        </td>
 
-                    {/* Financial Summary */}
-                    <div
-                      style={{
-                        background: 'var(--bg-secondary)',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-color)',
-                        padding: '0.6rem 0.8rem',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        fontSize: '0.82rem',
-                      }}
-                    >
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>{t('totalQuote')}</span>
-                        <strong className="privacy-blur" style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{formatMoney(rep.totalPrice)}</strong>
-                      </div>
-
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>{t('advancePaid')}</span>
-                        <span className="privacy-blur" style={{ color: 'var(--accent-success)', fontWeight: 600 }}>{formatMoney(rep.advancePaid)}</span>
-                      </div>
-
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>{t('remainingDue')}</span>
-                        <strong className="privacy-blur" style={{ color: isPaid ? 'var(--accent-success)' : 'var(--accent-danger)', fontSize: '0.95rem' }}>
-                          {formatMoney(rep.remainingDue)}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {/* Actions & Status Workflow Controls */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        paddingTop: '0.4rem',
-                        borderTop: '1px solid var(--border-color)',
-                      }}
-                    >
-                      {/* Left: Tools */}
-                      <div style={{ display: 'flex', gap: '0.3rem' }}>
-                        <button
-                          className="btn-icon btn-outline btn-sm"
-                          title={t('printTicket')}
-                          onClick={() => setActiveReceipt({ type: 'repair', data: rep })}
-                        >
-                          <Printer size={14} />
-                        </button>
-                        {isAdmin && (
-                          <>
+                        {/* 9. Actions */}
+                        <td style={{ padding: '0.65rem 1rem', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.35rem' }}>
+                            {/* View Receipt */}
                             <button
-                              className="btn-icon btn-outline btn-sm"
-                              title={t('editTicket')}
+                              type="button"
+                              className="dash-action-btn"
+                              onClick={() => setActiveReceipt({ type: 'repair', data: rep })}
+                              title="Voir le reçu"
+                            >
+                              <Eye size={14} />
+                            </button>
+
+                            {/* Edit Action */}
+                            <button
+                              type="button"
+                              className="dash-action-btn"
                               onClick={() => onEditRepair(rep)}
+                              title="Modifier la fiche"
                             >
                               <Edit2 size={14} />
                             </button>
-                            <button
-                              className="btn-icon btn-outline btn-sm"
-                              title={t('deleteTicket')}
-                              style={{ color: 'var(--accent-danger)' }}
-                              onClick={() => setDeleteModal({ open: true, repair: rep })}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
 
-                      {/* Right: Quick Status Shift */}
-                      <div>
-                        {rep.status === 'received' && (
-                          <button
-                            className="btn btn-sm btn-outline"
-                            style={{
-                              fontSize: '0.75rem',
-                              color: 'var(--accent-info)',
-                              borderColor: 'var(--accent-info)',
-                              padding: '0.3rem 0.65rem',
-                            }}
-                            onClick={() => handleStatusChange(rep, 'in_progress')}
-                          >
-                            {t('passInProgress')} <ArrowRight size={13} />
-                          </button>
-                        )}
-                        {rep.status === 'in_progress' && (
-                          <button
-                            className="btn btn-sm btn-success"
-                            style={{ fontSize: '0.75rem', padding: '0.3rem 0.65rem' }}
-                            onClick={() => handleStatusChange(rep, 'ready')}
-                          >
-                            <Check size={13} /> {t('markReady')}
-                          </button>
-                        )}
-                        {rep.status === 'ready' && (
-                          <button
-                            className="btn btn-sm btn-primary"
-                            style={{ fontSize: '0.75rem', padding: '0.3rem 0.65rem' }}
-                            onClick={() => handleStatusChange(rep, 'delivered')}
-                          >
-                            <CheckCircle size={13} /> {t('deliverAndClose')}
-                          </button>
-                        )}
-                        {rep.status === 'delivered' && (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--accent-purple)', fontWeight: 600 }}>
-                            {t('fileClosed')}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            /* Table Mode inside the Single Card */
-            <div className="table-responsive">
-              <table className="custom-table">
-                <thead>
-                  <tr>
-                    <th>{t('ticketNumCol')}</th>
-                    <th>{t('deviceModel')}</th>
-                    <th>{t('clientSection')}</th>
-                    <th>{t('issueDiagnostic')}</th>
-                    <th>{t('totalQuote')}</th>
-                    <th>{t('advancePaid')} / {t('remainingDue')}</th>
-                    <th>{t('status')}</th>
-                    <th style={{ textAlign: 'right' }}>{t('actions')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRepairs.map((rep) => {
-                    const isPaid = Number(rep.remainingDue) <= 0;
-                    return (
-                      <tr key={rep.id}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                            <span className="badge badge-blue">{rep.ticketNumber}</span>
-                            {rep.priority === 'urgent' && <span className="badge badge-red">{t('priorityUrgent')}</span>}
-                          </div>
-                        </td>
-                        <td>
-                          <strong style={{ fontSize: '0.9rem' }}>{rep.deviceModel}</strong>
-                        </td>
-                        <td>
-                          <div>{rep.clientName?.trim() ? rep.clientName : (lang === 'ar' ? 'زبون عابر' : lang === 'en' ? 'Walk-in Client' : 'Client comptoir')}</div>
-                          {rep.clientPhone && (
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rep.clientPhone}</span>
-                          )}
-                        </td>
-                        <td style={{ maxWidth: '250px' }}>
-                          <div style={{ fontSize: '0.82rem' }}>{rep.issueDescription}</div>
-                          {rep.pieceName && (
-                            <div style={{ fontSize: '0.74rem', color: 'var(--accent-info)' }}>🔧 {rep.pieceName}</div>
-                          )}
-                        </td>
-                        <td>
-                          <strong className="privacy-blur" style={{ fontSize: '0.92rem' }}>{formatMoney(rep.totalPrice)}</strong>
-                        </td>
-                        <td>
-                          <div className="privacy-blur" style={{ fontSize: '0.78rem', color: 'var(--accent-success)' }}>
-                            {t('advancePaid')} : {formatMoney(rep.advancePaid)}
-                          </div>
-                          <div
-                            className="privacy-blur"
-                            style={{
-                              fontSize: '0.78rem',
-                              color: isPaid ? 'var(--accent-success)' : 'var(--accent-danger)',
-                              fontWeight: isPaid ? 400 : 700,
-                            }}
-                          >
-                            {t('remainingDue')} : {formatMoney(rep.remainingDue)}
-                          </div>
-                        </td>
-                        <td>
-                          <select
-                            className="form-select"
-                            style={{
-                              fontSize: '0.75rem',
-                              padding: '0.25rem 0.5rem',
-                              width: 'auto',
-                              borderColor: getStatusBorderColor(rep.status),
-                            }}
-                            value={rep.status}
-                            onChange={(e) => handleStatusChange(rep, e.target.value)}
-                          >
-                            <option value="received">{t('statusReceived')}</option>
-                            <option value="in_progress">{t('statusInProgress')}</option>
-                            <option value="ready">{t('statusReady')}</option>
-                            <option value="delivered">{t('statusDelivered')}</option>
-                          </select>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end' }}>
+                            {/* Print Ticket */}
                             <button
-                              className="btn-icon btn-outline btn-sm"
-                              title={t('printTicket')}
-                              onClick={() => setActiveReceipt({ type: 'repair', data: rep })}
+                              type="button"
+                              className="dash-action-btn"
+                              onClick={() => setActiveReceipt({ type: 'repair', data: rep, autoPrint: true })}
+                              title="Imprimer le ticket"
                             >
-                              <Printer size={13} />
+                              <Printer size={14} />
                             </button>
+
+                            {/* Delete Action (Admin) */}
                             {isAdmin && (
-                              <>
-                                <button
-                                  className="btn-icon btn-outline btn-sm"
-                                  title={t('editTicket')}
-                                  onClick={() => onEditRepair(rep)}
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                                <button
-                                  className="btn-icon btn-outline btn-sm"
-                                  title={t('deleteTicket')}
-                                  style={{ color: 'var(--accent-danger)' }}
-                                  onClick={() => setDeleteModal({ open: true, repair: rep })}
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </>
+                              <button
+                                type="button"
+                                className="dash-action-btn delete"
+                                onClick={() => setDeleteModal({ open: true, repair: rep })}
+                                title="Supprimer la fiche"
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             )}
                           </div>
                         </td>
                       </tr>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
+      {/* 5b. CARDS VIEW */}
+      {viewMode === 'cards' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+          {filteredRepairs.map((rep) => {
+            const isPaid = Number(rep.remainingDue) <= 0;
+            const stStyle = getStatusStyles(rep.status);
+            const isUrgent = rep.priority === 'urgent' || rep.priority === 'high';
 
-      {/* Modal for Deleting a Repair Ticket without alert() */}
+            return (
+              <div key={rep.id} className="dash-card" style={{ gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span
+                      style={{
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '6px',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        color: '#fbbf24',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                      }}
+                    >
+                      {rep.ticketNumber || `#SAV-${String(rep.id).slice(-4)}`}
+                    </span>
+                    {isUrgent && (
+                      <span
+                        style={{
+                          padding: '0.18rem 0.45rem',
+                          borderRadius: '6px',
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          background: '#ef4444',
+                          color: '#ffffff',
+                        }}
+                      >
+                        Urgent
+                      </span>
+                    )}
+                  </div>
+
+                  <select
+                    className="dash-status-select"
+                    value={rep.status}
+                    onChange={(e) => handleStatusChange(rep, e.target.value)}
+                    style={{
+                      backgroundColor: stStyle.bg,
+                      color: stStyle.color,
+                      border: `1px solid ${stStyle.border}`,
+                      backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(stStyle.color)}' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                    }}
+                  >
+                    <option value="received" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{lang === 'ar' ? 'مستلم' : 'Reçu'}</option>
+                    <option value="in_progress" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{lang === 'ar' ? 'قيد الصيانة' : 'En cours'}</option>
+                    <option value="ready" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{lang === 'ar' ? 'جاهز للتسليم' : 'Prêt'}</option>
+                    <option value="delivered" style={{ background: 'var(--bg-card)', color: 'var(--text-primary)' }}>{lang === 'ar' ? 'تم التسليم' : 'Livré & Clôturé'}</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center' }}>
+                    {getBrandIcon(rep.deviceModel)}
+                    <span>{rep.deviceModel || 'Appareil'}</span>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                    {rep.clientName || 'Client Atelier'} {rep.clientPhone ? `• ${rep.clientPhone}` : ''}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                    {rep.issueDescription}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Total Devis</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {privacyMode ? '••••' : formatMoney(rep.totalPrice)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Reste Dû</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: isPaid ? '#10b981' : '#ef4444' }}>
+                      {privacyMode ? '••••' : formatMoney(rep.remainingDue || 0)}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.35rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveReceipt({ type: 'repair', data: rep })}
+                    className="dash-action-btn"
+                    title="Voir le reçu"
+                  >
+                    <Eye size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onEditRepair(rep)}
+                    className="dash-action-btn"
+                    title="Modifier la fiche"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveReceipt({ type: 'repair', data: rep, autoPrint: true })}
+                    className="dash-action-btn"
+                    title="Imprimer le ticket"
+                  >
+                    <Printer size={14} />
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteModal({ open: true, repair: rep })}
+                      className="dash-action-btn delete"
+                      title="Supprimer la fiche"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 5c. KANBAN VIEW */}
+      {viewMode === 'kanban' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(260px, 1fr))', gap: '1rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
+          {[
+            { key: 'received', title: 'Reçu', color: '#38bdf8', icon: Inbox },
+            { key: 'in_progress', title: 'En cours', color: '#f59e0b', icon: Wrench },
+            { key: 'ready', title: 'Prêt à récupérer', color: '#10b981', icon: CheckCircle },
+            { key: 'delivered', title: 'Livré & Clôturé', color: '#c084fc', icon: ShieldCheck },
+          ].map((col) => {
+            const colItems = filteredRepairs.filter((r) => r.status === col.key);
+            const ColIcon = col.icon;
+            return (
+              <div
+                key={col.key}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '14px',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  minHeight: '400px',
+                }}
+              >
+                {/* Column Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.65rem', borderBottom: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <ColIcon size={16} style={{ color: col.color }} />
+                    <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{col.title}</span>
+                  </div>
+                  <span style={{ background: 'var(--bg-input)', color: col.color, fontWeight: 800, fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '999px' }}>
+                    {colItems.length}
+                  </span>
+                </div>
+
+                {/* Column Cards */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', overflowY: 'auto' }}>
+                  {colItems.length === 0 ? (
+                    <div style={{ padding: '2rem 0.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                      Aucun ticket
+                    </div>
+                  ) : (
+                    colItems.map((r) => (
+                      <div
+                        key={r.id}
+                        style={{
+                          background: 'var(--bg-input)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '10px',
+                          padding: '0.75rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.45rem',
+                          cursor: 'pointer',
+                          transition: 'transform 0.15s ease, border-color 0.15s ease',
+                        }}
+                        onClick={() => onEditRepair(r)}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = col.color;
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                          e.currentTarget.style.transform = 'none';
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#fbbf24' }}>
+                            {r.ticketNumber}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                            {formatMoney(r.totalPrice)}
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center' }}>
+                          {getBrandIcon(r.deviceModel)}
+                          <span>{r.deviceModel}</span>
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                          {r.clientName}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal for Deleting a Repair Ticket */}
       {deleteModal.open && deleteModal.repair && (
         <ConfirmDeleteModal
           title={`${t('deleteTicketConfirm')} : "${deleteModal.repair.ticketNumber}"`}

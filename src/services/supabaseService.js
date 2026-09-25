@@ -175,6 +175,8 @@ export const mapRepairFromDB = (db) => {
     priority: extra.priority || 'normal',
     status: db.status || 'received',
     partsUsed: Array.isArray(db.parts_used) ? db.parts_used : [],
+    archived: Boolean(extra.archived),
+    archivedAt: extra.archivedAt || null,
     createdAt: db.created_at,
     completedAt: db.completed_at,
     deliveredAt: db.delivered_at,
@@ -196,6 +198,8 @@ export const mapRepairToDB = (r) => {
     deductStock: r.deductStock !== undefined ? r.deductStock : true,
     expectedDate: r.expectedDate || '',
     issueDescription: issueText,
+    archived: Boolean(r.archived),
+    archivedAt: r.archivedAt || null,
   };
 
   const totalPrice = Number(r.totalPrice || r.finalCost || r.estimatedCost || 0);
@@ -224,6 +228,15 @@ export const mapRepairToDB = (r) => {
 };
 
 export const mapSaleFromDB = (db) => {
+  let extra = {};
+  if (db.notes && typeof db.notes === 'string' && db.notes.startsWith('{')) {
+    try {
+      extra = JSON.parse(db.notes);
+    } catch {
+      extra = {};
+    }
+  }
+
   const items = Array.isArray(db.items) ? db.items : [];
   const totalAmount = Number(db.total ?? 0);
   const totalCost = items.reduce(
@@ -261,52 +274,84 @@ export const mapSaleFromDB = (db) => {
     totalCost,
     totalProfit,
     status: remainingCredit === 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid',
-    notes: db.notes || '',
+    notes: extra.notes !== undefined ? extra.notes : (db.notes || ''),
+    archived: Boolean(extra.archived),
+    archivedAt: extra.archivedAt || null,
   };
 };
 
-export const mapSaleToDB = (s) => ({
-  id: s.id,
-  ticket_number: s.invoiceNumber || s.ticketNumber,
-  client_name: s.clientName,
-  client_phone: s.clientPhone,
-  client_id: s.clientId,
-  items: s.items || [],
-  subtotal: s.subtotal || s.initialAmount || s.totalAmount || s.total || 0,
-  discount: s.discount || 0,
-  total: s.totalAmount !== undefined ? s.totalAmount : (s.total ?? 0),
-  paid_amount: s.amountPaid !== undefined ? s.amountPaid : (s.paidAmount ?? (s.totalAmount || s.total || 0)),
-  remaining_debt: s.remainingCredit !== undefined ? s.remainingCredit : (s.remainingDebt ?? 0),
-  payment_method: s.paymentType || s.paymentMethod || 'cash',
-  cashier: s.cashier || '',
-  session_id: s.sessionId || '',
-  date: s.date || new Date().toISOString(),
-});
+export const mapSaleToDB = (s) => {
+  const metaObj = {
+    notes: s.notes || '',
+    archived: Boolean(s.archived),
+    archivedAt: s.archivedAt || null,
+  };
 
-export const mapExpenseFromDB = (db) => ({
-  id: db.id,
-  title: db.description,
-  description: db.description,
-  category: db.category,
-  amount: Number(db.amount ?? 0),
-  paymentMethod: db.payment_method ?? 'cash',
-  receiptNumber: db.receipt_number,
-  sessionId: db.session_id,
-  notes: db.notes ?? '',
-  date: db.date || db.created_at,
-});
+  return {
+    id: s.id,
+    ticket_number: s.invoiceNumber || s.ticketNumber,
+    client_name: s.clientName,
+    client_phone: s.clientPhone,
+    client_id: s.clientId,
+    items: s.items || [],
+    subtotal: s.subtotal || s.initialAmount || s.totalAmount || s.total || 0,
+    discount: s.discount || 0,
+    total: s.totalAmount !== undefined ? s.totalAmount : (s.total ?? 0),
+    paid_amount: s.amountPaid !== undefined ? s.amountPaid : (s.paidAmount ?? (s.totalAmount || s.total || 0)),
+    remaining_debt: s.remainingCredit !== undefined ? s.remainingCredit : (s.remainingDebt ?? 0),
+    payment_method: s.paymentType || s.paymentMethod || 'cash',
+    cashier: s.cashier || '',
+    session_id: s.sessionId || '',
+    date: s.date || new Date().toISOString(),
+    notes: JSON.stringify(metaObj),
+  };
+};
 
-export const mapExpenseToDB = (e) => ({
-  id: e.id,
-  category: e.category || 'other',
-  description: e.title || e.description || '',
-  amount: Number(e.amount) || 0,
-  payment_method: e.paymentMethod || 'cash',
-  receipt_number: e.receiptNumber || '',
-  session_id: e.sessionId || '',
-  notes: e.notes || '',
-  date: e.date || new Date().toISOString(),
-});
+export const mapExpenseFromDB = (db) => {
+  let extra = {};
+  if (db.notes && typeof db.notes === 'string' && db.notes.startsWith('{')) {
+    try {
+      extra = JSON.parse(db.notes);
+    } catch {
+      extra = {};
+    }
+  }
+
+  return {
+    id: db.id,
+    title: db.description,
+    description: db.description,
+    category: db.category,
+    amount: Number(db.amount ?? 0),
+    paymentMethod: db.payment_method ?? 'cash',
+    receiptNumber: db.receipt_number,
+    sessionId: db.session_id,
+    notes: extra.notes !== undefined ? extra.notes : (db.notes ?? ''),
+    archived: Boolean(extra.archived),
+    archivedAt: extra.archivedAt || null,
+    date: db.date || db.created_at,
+  };
+};
+
+export const mapExpenseToDB = (e) => {
+  const metaObj = {
+    notes: e.notes || '',
+    archived: Boolean(e.archived),
+    archivedAt: e.archivedAt || null,
+  };
+
+  return {
+    id: e.id,
+    category: e.category || 'other',
+    description: e.title || e.description || '',
+    amount: Number(e.amount) || 0,
+    payment_method: e.paymentMethod || 'cash',
+    receipt_number: e.receiptNumber || '',
+    session_id: e.sessionId || '',
+    notes: JSON.stringify(metaObj),
+    date: e.date || new Date().toISOString(),
+  };
+};
 
 export const mapCashSessionFromDB = (db) => ({
   id: db.id,

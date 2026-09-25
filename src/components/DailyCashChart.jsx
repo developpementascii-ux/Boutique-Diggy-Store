@@ -48,17 +48,17 @@ export default function DailyCashChart() {
         month: '2-digit',
       });
 
-      // Match sales for this day
-      const daySales = sales.filter((s) => {
-        if (!s.date) return false;
+      // Match sales for this day (strictly unarchived)
+      const daySales = (sales || []).filter((s) => {
+        if (s.archived || !s.date) return false;
         const d = getLocalDateKey(s.date);
         return d === dateKey;
       });
       const salesTotal = daySales.reduce((sum, s) => sum + (Number(s.amountPaid) || 0), 0);
 
-      // Match expenses for this day
-      const dayExpenses = expenses.filter((e) => {
-        if (!e.date) return false;
+      // Match expenses for this day (strictly unarchived)
+      const dayExpenses = (expenses || []).filter((e) => {
+        if (e.archived || !e.date) return false;
         const d = getLocalDateKey(e.date);
         return d === dateKey;
       });

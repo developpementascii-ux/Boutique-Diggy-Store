@@ -150,11 +150,11 @@ export function AppProvider({ children }) {
     }
   });
 
-  // Theme State: 'dark', 'light', 'cyber', 'emerald'
+  // Theme State: 'dark', 'light'
   const [theme, setTheme] = useState(() => {
     try {
       const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
-      return savedTheme && ['dark', 'light', 'cyber', 'emerald'].includes(savedTheme)
+      return savedTheme && ['dark', 'light'].includes(savedTheme)
         ? savedTheme
         : 'dark';
     } catch {
@@ -1130,6 +1130,80 @@ export function AppProvider({ children }) {
     }
   };
 
+  // --- REPAIR ARCHIVING ACTIONS (100% Livré & 100% Payé STRICTEMENT) ---
+  const archiveRepair = (repairId) => {
+    const repair = repairs.find((r) => r.id === repairId);
+    if (!repair) return { success: false, error: 'Réparation introuvable' };
+
+    // STRICT VALIDATION: Must be delivered (100%) AND remaining debt must be 0 (100% payé)
+    if (repair.status !== 'delivered') {
+      return {
+        success: false,
+        error: lang === 'ar'
+          ? 'لا يمكن أرشفة الجهاز إلا بعد تسليمه للزبون بنسبة 100% (Clôturé)'
+          : 'Seules les réparations clôturées et livrées au client (100%) peuvent être archivées !',
+      };
+    }
+    const remainingDue = Number(repair.remainingDue) || 0;
+    if (remainingDue > 0) {
+      return {
+        success: false,
+        error: lang === 'ar'
+          ? `لا يمكن أرشفة هذه الفيشة لأن عليها دين متبقي قدره ${formatMoney(remainingDue)} (لا يتم لمس الديون النشطة)`
+          : `Impossible d'archiver : il reste un solde impayé de ${formatMoney(remainingDue)} (les crédits actifs ne sont pas archivables) !`,
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    updateRepairsState((prev) =>
+      prev.map((r) => {
+        if (r.id === repairId) {
+          const updated = { ...r, archived: true, archivedAt: nowIso };
+          if (supabaseService.isAvailable()) {
+            supabaseService.upsertRepair(updated);
+          }
+          return updated;
+        }
+        return r;
+      })
+    );
+    return { success: true };
+  };
+
+  const unarchiveRepair = (repairId) => {
+    updateRepairsState((prev) =>
+      prev.map((r) => {
+        if (r.id === repairId) {
+          const updated = { ...r, archived: false, archivedAt: null };
+          if (supabaseService.isAvailable()) {
+            supabaseService.upsertRepair(updated);
+          }
+          return updated;
+        }
+        return r;
+      })
+    );
+  };
+
+  const archiveAllDeliveredRepairs = () => {
+    const nowIso = new Date().toISOString();
+    let count = 0;
+    updateRepairsState((prev) =>
+      prev.map((r) => {
+        if (!r.archived && r.status === 'delivered' && (Number(r.remainingDue) || 0) <= 0) {
+          count++;
+          const updated = { ...r, archived: true, archivedAt: nowIso };
+          if (supabaseService.isAvailable()) {
+            supabaseService.upsertRepair(updated);
+          }
+          return updated;
+        }
+        return r;
+      })
+    );
+    return count;
+  };
+
   // --- CLIENT & CREDIT ACTIONS ---
   const addClient = (clientData) => {
     const cleanName = (clientData.name || '').trim();
@@ -1170,7 +1244,7 @@ export function AppProvider({ children }) {
         customDiscountPercent: Number(clientData.customDiscountPercent) || 0,
         totalDebt: Number(clientData.totalDebt) || 0,
         loyaltyPoints: Number(clientData.loyaltyPoints) || 0,
-        isLoyaltyClient: clientData.isLoyaltyClient !== undefined ? Boolean(clientData.isLoyaltyClient) : true,
+        isLoyaltyClient: clientData.isLoyaltyClient !== undefined ? Boolean(clientData.isLoyaltyClient) : false,
         createdAt: clientData.createdAt || new Date().toISOString(),
         history: clientData.history || (Number(clientData.totalDebt) > 0 ? [{
           id: `trx-${Date.now()}`,
@@ -1207,7 +1281,7 @@ export function AppProvider({ children }) {
     );
   };
 
-  const syncClientDebt = (clientName, clientPhone, amountToAdd, note, type = 'sale_credit', referenceId = null, explicitClientId = null) => {
+  const syncClientDebt = (clientName, clientPhone, amountToAdd, note, type = 'sale_credit', referenceId = null, explicitClientId = null, trxDate = null) => {
     if (!amountToAdd || Number(amountToAdd) === 0) return;
     const cleanName = (clientName || '').trim();
     const cleanPhone = (clientPhone || '').trim();
@@ -1224,7 +1298,7 @@ export function AppProvider({ children }) {
 
       const newTrx = {
         id: `trx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        date: new Date().toISOString(),
+        date: trxDate || new Date().toISOString(),
         type,
         amount: Number(amountToAdd) || 0,
         note: note || (amountToAdd > 0 ? 'Dette ajoutée' : 'Paiement reçu'),
@@ -1456,6 +1530,89 @@ export function AppProvider({ children }) {
     );
   };
 
+  // --- CREDIT TRANSACTION ARCHIVING ACTIONS (Crédits collectés / paid UNIQUEMENT) ---
+  const archiveCreditTransaction = (clientId, trxId) => {
+    const client = clients.find((c) => c.id === clientId);
+    if (!client) return { success: false, error: 'Client introuvable' };
+    const trx = (client.history || []).find((t) => t.id === trxId);
+    if (!trx) return { success: false, error: 'Transaction introuvable' };
+
+    // STRICT CHECK: Only collected / settlement payments can be archived! Active debts are preserved.
+    const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
+    if (!isPayment) {
+      return {
+        success: false,
+        error: lang === 'ar'
+          ? 'لا يمكن أرشفة الديون النشطة، فقط عمليات السداد المستلمة تقبل الأرشفة'
+          : 'Seuls les règlements encaissés peuvent être archivés. Les dettes actives restent visibles.',
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    updateClientsState((prev) =>
+      prev.map((c) => {
+        if (c.id === clientId) {
+          const updatedHistory = (c.history || []).map((t) =>
+            t.id === trxId ? { ...t, archived: true, archivedAt: nowIso } : t
+          );
+          const updated = { ...c, history: updatedHistory };
+          if (supabaseService.isAvailable()) {
+            supabaseService.upsertClient(updated);
+          }
+          return updated;
+        }
+        return c;
+      })
+    );
+    return { success: true };
+  };
+
+  const unarchiveCreditTransaction = (clientId, trxId) => {
+    updateClientsState((prev) =>
+      prev.map((c) => {
+        if (c.id === clientId) {
+          const updatedHistory = (c.history || []).map((t) =>
+            t.id === trxId ? { ...t, archived: false, archivedAt: null } : t
+          );
+          const updated = { ...c, history: updatedHistory };
+          if (supabaseService.isAvailable()) {
+            supabaseService.upsertClient(updated);
+          }
+          return updated;
+        }
+        return c;
+      })
+    );
+  };
+
+  const archiveAllSettledCredits = () => {
+    const nowIso = new Date().toISOString();
+    let count = 0;
+    updateClientsState((prev) =>
+      prev.map((c) => {
+        let modified = false;
+        const updatedHistory = (c.history || []).map((t) => {
+          const isPayment = Number(t.amount) < 0 || t.type === 'payment' || t.type === 'repair_payment' || t.type === 'settlement';
+          if (!t.archived && isPayment) {
+            count++;
+            modified = true;
+            return { ...t, archived: true, archivedAt: nowIso };
+          }
+          return t;
+        });
+        if (modified) {
+          const updated = { ...c, history: updatedHistory };
+          if (supabaseService.isAvailable()) {
+            supabaseService.upsertClient(updated);
+          }
+          return updated;
+        }
+        return c;
+      })
+    );
+    return count;
+  };
+
   // Helper: compute 360° metrics, loyalty tier and history for a client
   const getClientStats = (clientId) => {
     const client = clients.find((c) => c.id === clientId);
@@ -1633,7 +1790,8 @@ export function AppProvider({ children }) {
           `Facture ${invoiceNumber} (Total ${totalAmount} DT, Payé ${amountPaid} DT, Reste dû ${remainingCredit} DT)`,
           'sale_credit',
           newSale.id,
-          linkedClientId
+          linkedClientId,
+          newSale.date
         );
       }
     }
@@ -1721,6 +1879,77 @@ export function AppProvider({ children }) {
     return newSaleObj;
   };
 
+  // --- SALES ARCHIVING ACTIONS ---
+  const archiveSale = (saleId) => {
+    const nowIso = new Date().toISOString();
+    updateSalesState((prev) =>
+      prev.map((s) => {
+        if (s.id === saleId) {
+          const updated = { ...s, archived: true, archivedAt: nowIso };
+          if (supabaseService.isAvailable()) {
+            supabaseService.insertSale(updated);
+          }
+          return updated;
+        }
+        return s;
+      })
+    );
+  };
+
+  const unarchiveSale = (saleId) => {
+    updateSalesState((prev) =>
+      prev.map((s) => {
+        if (s.id === saleId) {
+          const updated = { ...s, archived: false, archivedAt: null };
+          if (supabaseService.isAvailable()) {
+            supabaseService.insertSale(updated);
+          }
+          return updated;
+        }
+        return s;
+      })
+    );
+  };
+
+  const archiveSalesBatch = (saleIds) => {
+    if (!Array.isArray(saleIds) || saleIds.length === 0) return;
+    const idSet = new Set(saleIds);
+    const nowIso = new Date().toISOString();
+    updateSalesState((prev) =>
+      prev.map((s) => {
+        if (idSet.has(s.id)) {
+          const updated = { ...s, archived: true, archivedAt: nowIso };
+          if (supabaseService.isAvailable()) {
+            supabaseService.insertSale(updated);
+          }
+          return updated;
+        }
+        return s;
+      })
+    );
+  };
+
+  const archiveSalesBeforeDate = (cutoffDateStr) => {
+    const cutoff = new Date(cutoffDateStr);
+    cutoff.setHours(23, 59, 59, 999);
+    const nowIso = new Date().toISOString();
+    let count = 0;
+    updateSalesState((prev) =>
+      prev.map((s) => {
+        if (!s.archived && new Date(s.date) <= cutoff) {
+          count++;
+          const updated = { ...s, archived: true, archivedAt: nowIso };
+          if (supabaseService.isAvailable()) {
+            supabaseService.insertSale(updated);
+          }
+          return updated;
+        }
+        return s;
+      })
+    );
+    return count;
+  };
+
   // --- EXPENSE ACTIONS ---
   const addExpense = (expenseData) => {
     const newExpense = {
@@ -1764,6 +1993,59 @@ export function AppProvider({ children }) {
     if (supabaseService.isAvailable()) {
       supabaseService.deleteExpense(id);
     }
+  };
+
+  // --- EXPENSE ARCHIVING ACTIONS ---
+  const archiveExpense = (expenseId) => {
+    const nowIso = new Date().toISOString();
+    updateExpensesState((prev) =>
+      prev.map((exp) => {
+        if (exp.id === expenseId) {
+          const updated = { ...exp, archived: true, archivedAt: nowIso };
+          if (supabaseService.isAvailable()) {
+            supabaseService.insertExpense(updated);
+          }
+          return updated;
+        }
+        return exp;
+      })
+    );
+  };
+
+  const unarchiveExpense = (expenseId) => {
+    updateExpensesState((prev) =>
+      prev.map((exp) => {
+        if (exp.id === expenseId) {
+          const updated = { ...exp, archived: false, archivedAt: null };
+          if (supabaseService.isAvailable()) {
+            supabaseService.insertExpense(updated);
+          }
+          return updated;
+        }
+        return exp;
+      })
+    );
+  };
+
+  const archiveExpensesBeforeDate = (cutoffDateStr) => {
+    const cutoff = new Date(cutoffDateStr);
+    cutoff.setHours(23, 59, 59, 999);
+    const nowIso = new Date().toISOString();
+    let count = 0;
+    updateExpensesState((prev) =>
+      prev.map((exp) => {
+        if (!exp.archived && new Date(exp.date) <= cutoff) {
+          count++;
+          const updated = { ...exp, archived: true, archivedAt: nowIso };
+          if (supabaseService.isAvailable()) {
+            supabaseService.insertExpense(updated);
+          }
+          return updated;
+        }
+        return exp;
+      })
+    );
+    return count;
   };
 
   // --- CASH SESSION ACTIONS (OUVERTURE & CLÔTURE) ---
@@ -1840,7 +2122,7 @@ export function AppProvider({ children }) {
     }
   };
 
-  // --- STATS & ANALYTICS HELPERS ---
+  // --- STATS & ANALYTICS HELPERS (ACTIVE ONLY - ARCHIVED EXCLUDED) ---
   const isToday = (dateStr) => {
     if (!dateStr) return false;
     const d = new Date(dateStr);
@@ -1852,11 +2134,11 @@ export function AppProvider({ children }) {
     );
   };
 
-  const todaySalesList = sales.filter((s) => isToday(s.date));
+  const todaySalesList = sales.filter((s) => !s.archived && isToday(s.date));
   const todayDirectSalesAmount = todaySalesList.reduce((acc, s) => acc + (Number(s.amountPaid) || 0), 0);
   const todaySalesProfit = todaySalesList.reduce((acc, s) => acc + (Number(s.totalProfit) || 0), 0);
 
-  const todayRepairInflow = repairs.reduce((acc, rep) => {
+  const todayRepairInflow = repairs.filter((r) => !r.archived).reduce((acc, rep) => {
     let sum = 0;
     const createdToday = isToday(rep.createdAt);
     const deliveredToday = isToday(rep.deliveredAt);
@@ -1876,7 +2158,7 @@ export function AppProvider({ children }) {
     } else if (deliveredToday && !createdToday) {
       const hasClientPayment = rep.clientName && clients.some(c => 
         (c.name.toLowerCase() === rep.clientName.toLowerCase() || (c.phone && c.phone === rep.clientPhone)) &&
-        (c.history || []).some(t => isToday(t.date) && (t.referenceId === rep.id || t.type === 'repair_payment'))
+        (c.history || []).some(t => !t.archived && isToday(t.date) && (t.referenceId === rep.id || t.type === 'repair_payment'))
       );
       if (!hasClientPayment) {
         sum += remainingSettled;
@@ -1885,7 +2167,7 @@ export function AppProvider({ children }) {
     return acc + sum;
   }, 0);
 
-  const todayDeliveredRepairs = repairs.filter((r) => r.status === 'delivered' && isToday(r.deliveredAt));
+  const todayDeliveredRepairs = repairs.filter((r) => !r.archived && r.status === 'delivered' && isToday(r.deliveredAt));
   const todayRepairsProfit = todayDeliveredRepairs.reduce((acc, r) => {
     const revenue = Number(r.totalPrice) || 0;
     const cost = Number(r.pieceCost) || 0;
@@ -1896,7 +2178,7 @@ export function AppProvider({ children }) {
 
   const todayCreditPaymentsAmount = clients.reduce((total, client) => {
     const paymentsToday = (client.history || []).filter(
-      (t) => isToday(t.date) && (Number(t.amount) < 0 || t.type === 'payment' || t.type === 'repair_payment' || t.type === 'settlement')
+      (t) => !t.archived && isToday(t.date) && (Number(t.amount) < 0 || t.type === 'payment' || t.type === 'repair_payment' || t.type === 'settlement')
     );
     const sumForClient = paymentsToday.reduce(
       (sub, t) => sub + Math.abs(Number(t.amount) || 0),
@@ -1908,7 +2190,7 @@ export function AppProvider({ children }) {
   const todaySalesAmount = todayDirectSalesAmount + todayRepairInflow + todayCreditPaymentsAmount;
   const todayProfit = todaySalesProfit + todayRepairsProfit;
 
-  const todayExpensesList = expenses.filter((e) => isToday(e.date));
+  const todayExpensesList = expenses.filter((e) => !e.archived && isToday(e.date));
   const todayExpensesAmount = todayExpensesList.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
   const todayCashExpensesAmount = todayExpensesList
     .filter((e) => e.paymentMethod === 'cash')
@@ -1925,7 +2207,7 @@ export function AppProvider({ children }) {
     ? Number(lastClosedSession.countedCash ?? lastClosedSession.theoreticalCash ?? 0)
     : 0;
 
-  const monthExpensesAmount = expenses.reduce((acc, e) => {
+  const monthExpensesAmount = expenses.filter((e) => !e.archived).reduce((acc, e) => {
     const d = new Date(e.date);
     const now = new Date();
     if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
@@ -1934,9 +2216,21 @@ export function AppProvider({ children }) {
     return acc;
   }, 0);
 
-  const activeRepairs = repairs.filter((r) => r.status !== 'delivered' && r.status !== 'cancelled');
-  const urgentRepairs = repairs.filter((r) => (r.status === 'received' || r.status === 'in_progress') && (r.priority === 'urgent' || r.priority === 'high'));
-  const readyRepairs = repairs.filter((r) => r.status === 'ready');
+  const activeRepairs = repairs.filter((r) => !r.archived && r.status !== 'delivered' && r.status !== 'cancelled');
+  const urgentRepairs = repairs.filter((r) => !r.archived && (r.status === 'received' || r.status === 'in_progress') && (r.priority === 'urgent' || r.priority === 'high'));
+  const readyRepairs = repairs.filter((r) => !r.archived && r.status === 'ready');
+
+  const archivedSales = sales.filter((s) => s.archived);
+  const archivedRepairs = repairs.filter((r) => r.archived);
+  const archivedExpenses = expenses.filter((e) => e.archived);
+  const archivedCreditTransactions = clients.flatMap((c) =>
+    (c.history || []).filter((t) => t.archived).map((t) => ({ ...t, clientId: c.id, clientName: c.name, clientPhone: c.phone }))
+  );
+  const archivedSalesCount = archivedSales.length;
+  const archivedRepairsCount = archivedRepairs.length;
+  const archivedExpensesCount = archivedExpenses.length;
+  const archivedCreditsCount = archivedCreditTransactions.length;
+  const totalArchivedCount = archivedSalesCount + archivedRepairsCount + archivedCreditsCount + archivedExpensesCount;
 
   const lowStockProducts = products
     .filter((p) => isProductLowStock(p))
@@ -1948,9 +2242,9 @@ export function AppProvider({ children }) {
   const totalClientsDebt = clients.reduce((acc, c) => acc + (Number(c.totalDebt) || 0), 0);
   const clientsWithDebt = clients.filter((c) => Number(c.totalDebt) > 0);
 
-  const pendingPurchaseOrdersCount = purchaseOrders.filter((po) => po.status === 'pending' || po.status === 'ordered').length;
-  const clientRequestsCount = purchaseOrders.filter((po) => po.type === 'client_request' && (po.status === 'pending' || po.status === 'ordered')).length;
-  const stockRefillsCount = purchaseOrders.filter((po) => po.type === 'stock_refill' && (po.status === 'pending' || po.status === 'ordered')).length;
+  const pendingPurchaseOrdersCount = purchaseOrders.filter((po) => !po.archived && (po.status === 'pending' || po.status === 'ordered')).length;
+  const clientRequestsCount = purchaseOrders.filter((po) => !po.archived && po.type === 'client_request' && (po.status === 'pending' || po.status === 'ordered')).length;
+  const stockRefillsCount = purchaseOrders.filter((po) => !po.archived && po.type === 'stock_refill' && (po.status === 'pending' || po.status === 'ordered')).length;
 
   // --- PURCHASE ORDERS CRUD ACTIONS ---
   const addPurchaseOrder = (orderData) => {
@@ -2006,6 +2300,28 @@ export function AppProvider({ children }) {
     updatePurchaseOrdersState((prev) => prev.filter((o) => o.id !== id));
     if (supabaseService.isAvailable()) {
       supabaseService.deletePurchaseOrder(id);
+    }
+  };
+
+  const resetPurchaseOrders = (mode = 'all', orderIds = null) => {
+    if (mode === 'selected' && Array.isArray(orderIds)) {
+      updatePurchaseOrdersState((prev) => prev.filter((o) => !orderIds.includes(o.id)));
+      if (supabaseService.isAvailable()) {
+        orderIds.forEach((id) => supabaseService.deletePurchaseOrder(id));
+      }
+    } else if (mode === 'received') {
+      const toDelete = purchaseOrders.filter((po) => po.status === 'received');
+      updatePurchaseOrdersState((prev) => prev.filter((o) => o.status !== 'received'));
+      if (supabaseService.isAvailable()) {
+        toDelete.forEach((po) => supabaseService.deletePurchaseOrder(po.id));
+      }
+    } else {
+      // mode === 'all'
+      const idsToDelete = purchaseOrders.map((o) => o.id);
+      updatePurchaseOrdersState([]);
+      if (supabaseService.isAvailable()) {
+        idsToDelete.forEach((id) => supabaseService.deletePurchaseOrder(id));
+      }
     }
   };
 
@@ -2361,6 +2677,7 @@ export function AppProvider({ children }) {
         addPurchaseOrder,
         updatePurchaseOrder,
         deletePurchaseOrder,
+        resetPurchaseOrders,
         togglePurchaseOrderStatus,
         importLowStockToPurchaseOrders,
         pendingPurchaseOrdersCount,
@@ -2400,6 +2717,30 @@ export function AppProvider({ children }) {
         todayDeliveredRepairs,
         totalClientsDebt,
         clientsWithDebt,
+
+        // Archives Actions & Counts
+        archiveSale,
+        unarchiveSale,
+        archiveSalesBatch,
+        archiveSalesBeforeDate,
+        archiveRepair,
+        unarchiveRepair,
+        archiveAllDeliveredRepairs,
+        archiveCreditTransaction,
+        unarchiveCreditTransaction,
+        archiveAllSettledCredits,
+        archiveExpense,
+        unarchiveExpense,
+        archiveExpensesBeforeDate,
+        archivedSales,
+        archivedRepairs,
+        archivedCreditsCount,
+        archivedExpenses,
+        archivedSalesCount,
+        archivedRepairsCount,
+        archivedExpensesCount,
+        archivedCreditTransactions,
+        totalArchivedCount,
 
         // Users & Auth Session
         users,

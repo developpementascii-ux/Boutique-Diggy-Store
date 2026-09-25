@@ -31,12 +31,14 @@ import {
   Filter,
   Download,
   FileDown,
+  X,
 } from 'lucide-react';
 
 export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
   const {
     purchaseOrders,
     deletePurchaseOrder,
+    resetPurchaseOrders,
     togglePurchaseOrderStatus,
     products = [],
     categories = [],
@@ -76,6 +78,7 @@ export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
 
   const [deleteModal, setDeleteModal] = useState({ open: false, order: null });
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   // Persist view mode and filters in localStorage
   useEffect(() => {
@@ -212,10 +215,53 @@ export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
     }, 0);
   }, [activeOrders]);
 
+  const receivedOrdersCount = useMemo(() => {
+    return purchaseOrders.filter((po) => po.status === 'received').length;
+  }, [purchaseOrders]);
+
+  const isFiltered = useMemo(() => {
+    return (
+      typeFilter !== 'all' ||
+      statusFilter !== 'all' ||
+      priorityFilter !== 'all' ||
+      categoryFilter !== 'all' ||
+      subCategoryFilter !== 'all' ||
+      Boolean(searchQuery.trim())
+    );
+  }, [typeFilter, statusFilter, priorityFilter, categoryFilter, subCategoryFilter, searchQuery]);
+
   const handleConfirmDelete = () => {
     if (!deleteModal.order) return;
     deletePurchaseOrder(deleteModal.order.id);
     setDeleteModal({ open: false, order: null });
+  };
+
+  const handleExecuteReset = (mode) => {
+    if (mode === 'received') {
+      const count = receivedOrdersCount;
+      resetPurchaseOrders('received');
+      toast.success(
+        lang === 'ar'
+          ? `تم حذف ${count} طلبيات مستلمة بنجاح`
+          : `${count} article(s) reçus retiré(s) du cahier !`
+      );
+    } else if (mode === 'filtered') {
+      const ids = filteredOrders.map((o) => o.id);
+      resetPurchaseOrders('selected', ids);
+      toast.success(
+        lang === 'ar'
+          ? `تم حذف ${ids.length} عناصر من القائمة بنجاح`
+          : `${ids.length} article(s) filtré(s) supprimé(s) du cahier !`
+      );
+    } else {
+      resetPurchaseOrders('all');
+      toast.success(
+        lang === 'ar'
+          ? 'تم تفريغ كامل قائمة الطلبيات بنجاح'
+          : 'Cahier de commandes entièrement réinitialisé !'
+      );
+    }
+    setShowResetModal(false);
   };
 
   const handlePrintList = () => {
@@ -286,32 +332,95 @@ export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
     content += `-----------------------------------------------------------\n`;
 
     let totalQty = 0;
+    let globalIndex = 0;
 
-    filteredOrders.forEach((po, index) => {
-      const qty = Number(po.quantity) || 1;
-      totalQty += qty;
+    // Group orders by Category and Sub-category
+    const groupedByCategory = {};
+    filteredOrders.forEach((po) => {
+      const catInfo = getOrderCategoryInfo(po);
+      const catKey = catInfo.categoryName || (lang === 'ar' ? 'أخرى / بدون تصنيف' : 'Autres / Sans catégorie');
+      const subCatKey = catInfo.subCategory || (lang === 'ar' ? 'عام' : 'Général');
 
-      content += `${index + 1}. [ ] ${po.title} (x${qty})\n`;
-      
-      const details = [];
-      if (po.supplier) {
-        details.push(`Fournisseur / Grossiste : ${po.supplier}`);
+      if (!groupedByCategory[catKey]) {
+        groupedByCategory[catKey] = {};
       }
-      if (po.type === 'client_request') {
-        details.push(`Demande Client : ${po.clientName || 'Client'}${po.clientPhone ? ` (Tél : ${po.clientPhone})` : ''}`);
+      if (!groupedByCategory[catKey][subCatKey]) {
+        groupedByCategory[catKey][subCatKey] = [];
       }
+      groupedByCategory[catKey][subCatKey].push({ po, catInfo });
+    });
 
-      if (details.length > 0) {
-        details.forEach((d) => {
-          content += `   • ${d}\n`;
+    const categoryNames = Object.keys(groupedByCategory).sort((a, b) => {
+      if (a.includes('Autres') || a.includes('بدون')) return 1;
+      if (b.includes('Autres') || b.includes('بدون')) return -1;
+      return a.localeCompare(b);
+    });
+
+    categoryNames.forEach((catName) => {
+      const subCats = groupedByCategory[catName];
+      const subCatKeys = Object.keys(subCats).sort((a, b) => {
+        if (a === 'Général' || a === 'عام') return 1;
+        if (b === 'Général' || b === 'عام') return -1;
+        return a.localeCompare(b);
+      });
+
+      // Calculate totals for this category
+      let catTotalLines = 0;
+      let catTotalQty = 0;
+      subCatKeys.forEach((subKey) => {
+        subCats[subKey].forEach(({ po }) => {
+          catTotalLines += 1;
+          catTotalQty += Number(po.quantity) || 1;
         });
-      }
+      });
+
+      content += `\n📦 CATÉGORIE : ${catName.toUpperCase()} (${catTotalLines} article${catTotalLines > 1 ? 's' : ''} • ${catTotalQty} unité${catTotalQty > 1 ? 's' : ''})\n`;
+      content += `-----------------------------------------------------------\n`;
+
+      subCatKeys.forEach((subKey) => {
+        const items = subCats[subKey];
+        const isGeneral = subKey === 'Général' || subKey === 'عام';
+        if (!isGeneral && (subCatKeys.length > 1 || subKey !== 'Général')) {
+          content += `\n▶ [${subKey}]\n`;
+        }
+
+        items.forEach(({ po, catInfo }) => {
+          globalIndex += 1;
+          const qty = Number(po.quantity) || 1;
+          totalQty += qty;
+
+          const subCatPrefix = catInfo.subCategory
+            ? `[${catInfo.subCategory}] `
+            : (catInfo.categoryName ? `[${catInfo.categoryName}] ` : '');
+
+          content += `  ${globalIndex}. [ ] ${subCatPrefix}${po.title} (x${qty})\n`;
+
+          const details = [];
+          if (po.supplier) {
+            details.push(`Fournisseur / Grossiste : ${po.supplier}`);
+          }
+          if (po.type === 'client_request') {
+            details.push(`Demande Client : ${po.clientName || 'Client'}${po.clientPhone ? ` (Tél : ${po.clientPhone})` : ''}`);
+          }
+          if (po.notes) {
+            details.push(`Note : ${po.notes}`);
+          }
+
+          if (details.length > 0) {
+            details.forEach((d) => {
+              content += `     • ${d}\n`;
+            });
+          }
+        });
+      });
+      content += `\n`;
     });
 
     content += `===========================================================\n`;
     content += `RÉCAPITULATIF GLOBAL :\n`;
+    content += `- Nombre de catégories : ${categoryNames.length}\n`;
     content += `- Nombre de lignes de commande : ${filteredOrders.length}\n`;
-    content += `- Quantité totale d'articles : ${totalQty}\n`;
+    content += `- Quantité totale d'articles à commander : ${totalQty}\n`;
 
     // Trigger download of the .txt file
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -413,6 +522,24 @@ export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
             <Printer size={16} />
             <span>{t('printPurchaseList')}</span>
           </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => setShowResetModal(true)}
+              style={{
+                borderColor: 'rgba(239, 68, 68, 0.4)',
+                color: '#ef4444',
+                background: 'rgba(239, 68, 68, 0.06)',
+                fontWeight: 700,
+              }}
+              title={lang === 'ar' ? 'إعادة ضبط / تفريغ القائمة' : 'Réinitialiser / Vider la liste'}
+            >
+              <RotateCcw size={16} />
+              <span>{lang === 'ar' ? 'إعادة ضبط القائمة' : 'Reset Liste'}</span>
+            </button>
+          )}
 
           {isAdmin && (
             <button
@@ -1224,6 +1351,173 @@ export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
           onClose={() => setDeleteModal({ open: false, order: null })}
           confirmButtonText={lang === 'ar' ? 'تأكيد الحذف' : 'Supprimer'}
         />
+      )}
+
+      {/* Reset Orders Modal */}
+      {showResetModal && (
+        <div className="modal-overlay" onClick={() => setShowResetModal(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '490px', width: '95%', border: '1px solid rgba(239, 68, 68, 0.35)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="modal-header" style={{ paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#ef4444',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <RotateCcw size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {lang === 'ar' ? 'إعادة ضبط / تفريغ دفتر الطلبيات' : 'Réinitialiser la Liste des Commandes'}
+                  </h3>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    {lang === 'ar' ? 'اختر خيار إعادة الضبط المناسب لك' : 'Choisissez le mode de réinitialisation souhaité'}
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="btn-icon btn-outline" onClick={() => setShowResetModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', padding: '1.25rem 0' }}>
+              
+              {/* Option 1: Vider les articles reçus */}
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.85rem 1rem',
+                  borderRadius: '10px',
+                  textAlign: 'left',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  cursor: receivedOrdersCount > 0 ? 'pointer' : 'not-allowed',
+                  opacity: receivedOrdersCount > 0 ? 1 : 0.5,
+                }}
+                disabled={receivedOrdersCount === 0}
+                onClick={() => handleExecuteReset('received')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <CheckCircle2 size={20} style={{ color: '#10b981', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                      {lang === 'ar' ? 'حذف الطلبيات المستلمة فقط' : 'Vider uniquement les articles reçus'}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {lang === 'ar' ? 'الاحتفاظ بالطلبيات قيد الانتظار وحذف المستلمة' : 'Conserve les commandes en cours et supprime les commandes traitées'}
+                    </div>
+                  </div>
+                </div>
+                <span className="badge badge-green" style={{ fontSize: '0.75rem', fontWeight: 800 }}>
+                  {receivedOrdersCount} {lang === 'ar' ? 'مستلم' : 'reçu(s)'}
+                </span>
+              </button>
+
+              {/* Option 2: Vider la sélection filtrée */}
+              {isFiltered && (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.85rem 1rem',
+                    borderRadius: '10px',
+                    textAlign: 'left',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    background: 'rgba(245, 158, 11, 0.06)',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => handleExecuteReset('filtered')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <Filter size={20} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#f59e0b' }}>
+                        {lang === 'ar' ? 'حذف العناصر المفلترة الحالية' : 'Vider la sélection filtrée actuelle'}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {lang === 'ar' ? 'حذف النتائج الظاهرة حالياً في الجدول' : 'Supprime uniquement les lignes correspondant aux filtres actifs'}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="badge badge-yellow" style={{ fontSize: '0.75rem', fontWeight: 800 }}>
+                    {filteredOrders.length} {lang === 'ar' ? 'عنصر' : 'ligne(s)'}
+                  </span>
+                </button>
+              )}
+
+              {/* Option 3: Tout réinitialiser / Vider tout le cahier */}
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.85rem 1rem',
+                  borderRadius: '10px',
+                  textAlign: 'left',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  background: 'rgba(239, 68, 68, 0.06)',
+                  color: '#ef4444',
+                  cursor: purchaseOrders.length > 0 ? 'pointer' : 'not-allowed',
+                  opacity: purchaseOrders.length > 0 ? 1 : 0.5,
+                }}
+                disabled={purchaseOrders.length === 0}
+                onClick={() => handleExecuteReset('all')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <Trash2 size={20} style={{ color: '#ef4444', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                      {lang === 'ar' ? 'تفريغ كامل القائمة (حذف الكل)' : 'Vider TOUTE la liste (Remise à zéro)'}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {lang === 'ar' ? 'حذف كافة الملاحظات والطلبيات نهائياً' : 'Supprime définitivement toutes les notes et commandes'}
+                    </div>
+                  </div>
+                </div>
+                <span className="badge badge-red" style={{ fontSize: '0.75rem', fontWeight: 800 }}>
+                  {purchaseOrders.length} {lang === 'ar' ? 'الكل' : 'au total'}
+                </span>
+              </button>
+
+            </div>
+
+            {/* Footer */}
+            <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowResetModal(false)}
+              >
+                {t('cancel') || 'Annuler'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

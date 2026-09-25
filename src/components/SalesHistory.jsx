@@ -2,100 +2,131 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { toast } from 'sonner';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
+import EditSaleModal from './EditSaleModal';
+import RepairModal from './RepairModal';
 import {
   History,
   Search,
   Printer,
-  RotateCcw,
-  DollarSign,
-  TrendingUp,
-  CreditCard,
-  Banknote,
+  Eye,
+  Edit2,
+  Trash2,
   ShoppingCart,
   Wrench,
+  Coins,
+  Users,
+  CreditCard,
+  Wallet,
+  Calendar,
   Layers,
+  LayoutList,
+  LayoutGrid,
   CheckCircle2,
+  AlertTriangle,
   Clock,
   ArrowUpRight,
-  LayoutGrid,
-  LayoutList,
-  User,
-  Phone,
+  ArrowDownRight,
+  TrendingUp,
+  FileText,
+  Smartphone,
   Package,
-  Calendar,
-  Edit2,
-  HandCoins,
 } from 'lucide-react';
-import EditSaleModal from './EditSaleModal';
-import RepairModal from './RepairModal';
 
 export default function SalesHistory({ onEditRepair }) {
-  const { sales, repairs, products, clients, cancelSale, formatMoney, setActiveReceipt, t, lang, isAdmin } = useApp();
+  const {
+    sales = [],
+    repairs = [],
+    products = [],
+    clients = [],
+    cancelSale,
+    formatMoney,
+    setActiveReceipt,
+    privacyMode,
+    t,
+    lang,
+    isAdmin,
+  } = useApp();
 
+  // Search Query
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Date Filter: 'today' | 'yesterday' | '7d' | '30d' | 'custom'
   const [dateFilter, setDateFilter] = useState(() => {
     try {
-      return localStorage.getItem('sales_history_date_filter') || 'today';
+      const saved = localStorage.getItem('sales_history_date_filter_v2');
+      return saved && ['today', 'yesterday', '7d', '30d', 'custom'].includes(saved) ? saved : '7d';
     } catch {
-      return 'today';
+      return '7d';
     }
-  }); // 'today', 'yesterday', '7d', '30d', 'custom', 'all'
+  });
+
+  // Custom Date (YYYY-MM-DD)
   const [customDate, setCustomDate] = useState(() => {
     try {
-      return localStorage.getItem('sales_history_custom_date') || new Date().toISOString().split('T')[0];
+      return localStorage.getItem('sales_history_custom_date_v2') || new Date().toISOString().split('T')[0];
     } catch {
       return new Date().toISOString().split('T')[0];
     }
   });
+
+  // Operation Type Filter: 'all' | 'sales' | 'repairs' | 'credits'
   const [typeFilter, setTypeFilter] = useState(() => {
     try {
-      return localStorage.getItem('sales_history_type_filter') || 'all';
+      return localStorage.getItem('sales_history_type_filter_v2') || 'all';
     } catch {
       return 'all';
     }
-  }); // 'all', 'sales', 'repairs', 'credits'
+  });
+
+  // Payment Method Filter: 'all' | 'cash' | 'card' | 'credit' | 'partial'
   const [paymentFilter, setPaymentFilter] = useState(() => {
     try {
-      return localStorage.getItem('sales_history_payment_filter') || 'all';
+      return localStorage.getItem('sales_history_payment_filter_v2') || 'all';
     } catch {
       return 'all';
     }
-  }); // 'all', 'cash', 'credit', 'partial'
+  });
+
+  // View Mode: 'table' | 'cards'
   const [viewMode, setViewMode] = useState(() => {
     try {
-      return localStorage.getItem('sales_history_view_mode') || 'table';
+      return localStorage.getItem('sales_history_view_mode_v2') || 'table';
     } catch {
       return 'table';
     }
-  }); // 'table' | 'cards'
+  });
+
+  // Modals
   const [cancelModal, setCancelModal] = useState({ open: false, sale: null });
   const [editSaleModal, setEditSaleModal] = useState({ open: false, sale: null });
   const [editRepairModal, setEditRepairModal] = useState({ open: false, repair: null });
 
-  // Persist view mode and filters preference across visits
+  // Auto-persist filters
   useEffect(() => {
     try {
-      localStorage.setItem('sales_history_view_mode', viewMode);
-      localStorage.setItem('sales_history_date_filter', dateFilter);
-      localStorage.setItem('sales_history_custom_date', customDate);
-      localStorage.setItem('sales_history_type_filter', typeFilter);
-      localStorage.setItem('sales_history_payment_filter', paymentFilter);
+      localStorage.setItem('sales_history_view_mode_v2', viewMode);
+      localStorage.setItem('sales_history_date_filter_v2', dateFilter);
+      localStorage.setItem('sales_history_custom_date_v2', customDate);
+      localStorage.setItem('sales_history_type_filter_v2', typeFilter);
+      localStorage.setItem('sales_history_payment_filter_v2', paymentFilter);
     } catch (e) {
       console.error(e);
     }
   }, [viewMode, dateFilter, customDate, typeFilter, paymentFilter]);
 
-  // Date boundary calculation for period filtering
+  // Date Boundary Calculation
   const periodBounds = useMemo(() => {
     const now = new Date();
     let startDate = null;
     let endDate = null;
+    let periodLabel = '7 derniers jours';
 
     if (dateFilter === 'today') {
       startDate = new Date();
       startDate.setHours(0, 0, 0, 0);
       endDate = new Date();
       endDate.setHours(23, 59, 59, 999);
+      periodLabel = "aujourd'hui";
     } else if (dateFilter === 'yesterday') {
       startDate = new Date();
       startDate.setDate(now.getDate() - 1);
@@ -103,24 +134,28 @@ export default function SalesHistory({ onEditRepair }) {
       endDate = new Date();
       endDate.setDate(now.getDate() - 1);
       endDate.setHours(23, 59, 59, 999);
-    } else if (dateFilter === '7d' || dateFilter === 'week') {
+      periodLabel = 'hier';
+    } else if (dateFilter === '7d') {
       startDate = new Date();
       startDate.setDate(now.getDate() - 6);
       startDate.setHours(0, 0, 0, 0);
       endDate = new Date();
       endDate.setHours(23, 59, 59, 999);
-    } else if (dateFilter === '30d' || dateFilter === 'month') {
+      periodLabel = '7 derniers jours';
+    } else if (dateFilter === '30d') {
       startDate = new Date();
       startDate.setDate(now.getDate() - 29);
       startDate.setHours(0, 0, 0, 0);
       endDate = new Date();
       endDate.setHours(23, 59, 59, 999);
+      periodLabel = '30 derniers jours';
     } else if (dateFilter === 'custom') {
       const targetDate = customDate ? new Date(customDate + 'T00:00:00') : new Date();
       startDate = new Date(targetDate);
       startDate.setHours(0, 0, 0, 0);
       endDate = new Date(targetDate);
       endDate.setHours(23, 59, 59, 999);
+      periodLabel = customDate;
     }
 
     const isInPeriod = (dateStr) => {
@@ -130,46 +165,59 @@ export default function SalesHistory({ onEditRepair }) {
       return d >= startDate && d <= endDate;
     };
 
-    return { startDate, endDate, isInPeriod };
+    return { startDate, endDate, isInPeriod, periodLabel };
   }, [dateFilter, customDate]);
 
-  // Build unified operations list
+  // Build Unified Active Operations List (Excluding archived items)
   const allOperations = useMemo(() => {
     const list = [];
 
-    // Map sales
-    (sales || []).forEach((sale) => {
+    // Helper map of products by ID and name for fast image & data lookup
+    const prodMap = new Map();
+    (products || []).forEach((p) => {
+      if (p.id) prodMap.set(p.id, p);
+      if (p.name) prodMap.set(p.name.toLowerCase().trim(), p);
+    });
+
+    // 1. Map Counter Sales (Strictly unarchived)
+    (sales || []).filter((s) => !s.archived && !s.archivedAt).forEach((sale) => {
       const debt = Number(sale.remainingCredit || sale.remainingDebt || 0);
+      const total = Number(sale.totalAmount || sale.total || 0);
       const amountPaid = Number(sale.amountPaid) > 0
         ? Number(sale.amountPaid)
-        : Math.max(0, (Number(sale.totalAmount || sale.total || 0) - debt));
+        : Math.max(0, total - debt);
+
+      // Find item image if available
+      const firstItem = (sale.items && sale.items[0]) || null;
+      const matchedProd = firstItem ? (prodMap.get(firstItem.productId) || prodMap.get(firstItem.name?.toLowerCase().trim())) : null;
+      const itemImage = firstItem?.image || matchedProd?.image || null;
 
       list.push({
         id: `sale-${sale.id}`,
         kind: 'sale',
-        ref: sale.invoiceNumber,
+        ref: sale.invoiceNumber || `#V-${String(sale.id).slice(-4)}`,
         date: sale.date,
-        clientName: sale.clientName || (lang === 'ar' ? 'زبون عابر' : lang === 'en' ? 'Walk-in Client' : 'Client Comptoir'),
+        clientName: sale.clientName || (lang === 'ar' ? 'زبون مباشر' : 'Client Comptoir'),
         clientPhone: sale.clientPhone || '',
-        itemsList: sale.items || [],
-        detailsSummary: (sale.items || []).map((it) => `${it.name} (x${it.quantity})`).join(', '),
-        totalAmount: Number(sale.totalAmount || sale.total) || 0,
+        detailsSummary: (sale.items || []).map((it) => `${it.name}${it.quantity > 1 ? ` (${it.quantity})` : ''}`).join(' + ') || 'Vente d\'articles',
+        image: itemImage,
+        totalAmount: total,
         amountPaid,
         remainingDue: debt,
         profit: Number(sale.totalProfit) || 0,
-        paymentType: sale.paymentType || 'cash',
-        status: 'completed',
+        paymentType: sale.paymentType || (debt > 0 ? (amountPaid > 0 ? 'partial' : 'credit') : 'cash'),
+        status: debt === 0 ? 'settled' : amountPaid > 0 ? 'partial' : 'credit',
         raw: sale,
       });
     });
 
-    // Map repairs
-    (repairs || []).forEach((rep) => {
+    // 2. Map Repair Tickets (Strictly unarchived)
+    (repairs || []).filter((r) => !r.archived && !r.archivedAt).forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
       const effectiveDate = rep.deliveredAt || rep.createdAt;
       const advance = Number(rep.advancePaid || rep.initialAdvance || rep.deposit || 0);
-      const remainingDue = rep.remainingDue !== undefined ? Number(rep.remainingDue) : (isDelivered ? 0 : Math.max(0, (Number(rep.totalPrice || rep.finalCost || rep.estimatedCost) || 0) - advance));
-      const totalAmount = Math.max(Number(rep.totalPrice || rep.finalCost || rep.estimatedCost) || 0, advance + remainingDue);
+      const remainingDue = rep.remainingDue !== undefined ? Number(rep.remainingDue) : (isDelivered ? 0 : Math.max(0, (Number(rep.totalPrice || rep.finalCost) || 0) - advance));
+      const totalAmount = Math.max(Number(rep.totalPrice || rep.finalCost || 0), advance + remainingDue);
       const amountPaid = isDelivered
         ? Math.max(0, totalAmount - remainingDue)
         : (advance > 0 ? advance : Math.max(0, totalAmount - remainingDue));
@@ -178,50 +226,49 @@ export default function SalesHistory({ onEditRepair }) {
         ? Number(rep.laborCost)
         : Math.max(0, totalAmount - (Number(rep.pieceCost) || 0));
 
-      // Realized profit: if delivered -> full labor gain; if advance paid -> advance amount
       const profit = isDelivered
         ? (baseLabor > 0 ? baseLabor : totalAmount)
         : (amountPaid > 0 ? amountPaid : (baseLabor > 0 ? baseLabor : 0));
 
+      const matchedPiece = rep.pieceUsedId ? prodMap.get(rep.pieceUsedId) : null;
+      const repImage = rep.image || rep.deviceImage || matchedPiece?.image || null;
+
       list.push({
         id: `repair-${rep.id}`,
         kind: 'repair',
-        ref: rep.ticketNumber,
+        ref: rep.ticketNumber || `#SAV-${String(rep.id).slice(-4)}`,
         date: effectiveDate,
-        clientName: rep.clientName || (lang === 'ar' ? 'زبون صيانة' : lang === 'en' ? 'Repair Client' : 'Client Atelier'),
+        clientName: rep.clientName || (lang === 'ar' ? 'حريف ورشة' : 'Client Atelier'),
         clientPhone: rep.clientPhone || '',
-        itemsList: [],
-        deviceModel: rep.deviceModel,
-        issueDescription: rep.issueDescription,
-        pieceName: rep.pieceName,
-        detailsSummary: `${rep.deviceModel} — ${rep.issueDescription || 'Réparation'}${rep.pieceName ? ` (Pièce: ${rep.pieceName})` : ''}`,
+        detailsSummary: `${rep.deviceModel || 'Appareil'} — ${rep.issueDescription || rep.diagnostic || 'Réparation'}${rep.pieceName ? ` + ${rep.pieceName}` : ''}`,
+        image: repImage,
         totalAmount,
         amountPaid,
         remainingDue,
         profit,
         paymentType: remainingDue === 0 ? 'cash' : (amountPaid > 0 ? 'partial' : 'credit'),
-        status: rep.status,
+        status: isDelivered ? 'settled' : rep.status === 'in_progress' ? 'in_progress' : 'pending',
         raw: rep,
       });
     });
 
-    // Map credit payments (collected debt settlements)
+    // 3. Map Credit Settlements (Strictly unarchived)
     (clients || []).forEach((client) => {
       (client.history || []).forEach((trx) => {
-        const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
+        const isPayment = !trx.archived && !trx.archivedAt && (Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement');
         if (isPayment) {
-          const collectedAmount = Math.abs(Number(trx.amount) || 0);
+          const collected = Math.abs(Number(trx.amount) || 0);
           list.push({
-            id: `credit-pmt-${client.id}-${trx.id || trx.date}`,
+            id: `credit-${client.id}-${trx.id || trx.date}`,
             kind: 'credit_payment',
-            ref: trx.id ? `REC-${String(trx.id).replace('trx-', '').slice(-6).toUpperCase()}` : 'RECOUV',
+            ref: trx.id ? `#CR-${String(trx.id).replace('trx-', '').slice(-4).toUpperCase()}` : '#CR-REGL',
             date: trx.date,
-            clientName: client.name || (lang === 'ar' ? 'زبون' : lang === 'en' ? 'Customer' : 'Client'),
+            clientName: client.name || 'Client',
             clientPhone: client.phone || '',
-            itemsList: [],
-            detailsSummary: `${t('opTypeCredit')} • ${trx.note || (lang === 'ar' ? 'سداد نقداً' : lang === 'en' ? 'Cash settlement' : 'Règlement espèces')}`,
-            totalAmount: collectedAmount,
-            amountPaid: collectedAmount,
+            detailsSummary: `Règlement Crédit • ${trx.note || 'Espèces'}`,
+            image: null,
+            totalAmount: collected,
+            amountPaid: collected,
             remainingDue: 0,
             profit: 0,
             paymentType: 'cash',
@@ -235,32 +282,33 @@ export default function SalesHistory({ onEditRepair }) {
     // Sort newest first
     list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return list;
-  }, [sales, repairs, clients, lang, t]);
+  }, [sales, repairs, products, clients, lang]);
 
-  // Filter logic (Strictly reactive to date, type, payment method and search query)
+  // Reactive Filter Logic
   const filteredOperations = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
 
     return allOperations.filter((op) => {
-      // Type filter
+      // Type Filter
       if (typeFilter === 'sales' && op.kind !== 'sale') return false;
       if (typeFilter === 'repairs' && op.kind !== 'repair') return false;
       if (typeFilter === 'credits' && op.kind !== 'credit_payment') return false;
 
-      // Payment filter
+      // Payment Method Filter
       if (paymentFilter === 'cash' && op.paymentType !== 'cash') return false;
-      if (paymentFilter === 'credit' && op.paymentType !== 'credit' && op.remainingDue <= 0) return false;
-      if (paymentFilter === 'partial' && op.paymentType !== 'partial') return false;
+      if (paymentFilter === 'card' && op.paymentType !== 'card') return false;
+      if (paymentFilter === 'credit' && op.status !== 'credit' && op.remainingDue <= 0) return false;
+      if (paymentFilter === 'partial' && op.status !== 'partial') return false;
 
-      // Date filter
+      // Date Range Filter
       if (!periodBounds.isInPeriod(op.date)) return false;
 
-      // Query filter
+      // Search Filter
       if (q) {
-        const matchRef = op.ref && op.ref.toLowerCase().includes(q);
-        const matchClient = op.clientName && op.clientName.toLowerCase().includes(q);
-        const matchPhone = op.clientPhone && op.clientPhone.toLowerCase().includes(q);
-        const matchDetails = op.detailsSummary && op.detailsSummary.toLowerCase().includes(q);
+        const matchRef = (op.ref || '').toLowerCase().includes(q);
+        const matchClient = (op.clientName || '').toLowerCase().includes(q);
+        const matchPhone = (op.clientPhone || '').toLowerCase().includes(q);
+        const matchDetails = (op.detailsSummary || '').toLowerCase().includes(q);
         if (!matchRef && !matchClient && !matchPhone && !matchDetails) {
           return false;
         }
@@ -270,26 +318,38 @@ export default function SalesHistory({ onEditRepair }) {
     });
   }, [allOperations, searchQuery, periodBounds, typeFilter, paymentFilter]);
 
-  // Dynamic KPI Summary calculated strictly from current active filter results (excluding granted credit)
-  const totalVolume = useMemo(() => {
-    return filteredOperations.reduce((acc, op) => acc + (Number(op.amountPaid) || 0), 0);
+  // Aggregate KPI Calculations
+  const kpiTotals = useMemo(() => {
+    let totalRevenue = 0;
+    let totalCollected = 0;
+    let totalNetProfit = 0;
+    let totalCreditsGranted = 0;
+
+    filteredOperations.forEach((op) => {
+      totalRevenue += Number(op.totalAmount) || 0;
+      totalCollected += Number(op.amountPaid) || 0;
+      totalNetProfit += Number(op.profit) || 0;
+      totalCreditsGranted += Number(op.remainingDue) || 0;
+    });
+
+    return {
+      totalRevenue,
+      totalCollected,
+      totalNetProfit,
+      totalCreditsGranted,
+      transactionsCount: filteredOperations.length,
+    };
   }, [filteredOperations]);
 
-  const totalCollected = useMemo(() => {
-    return filteredOperations.reduce((acc, op) => acc + (Number(op.amountPaid) || 0), 0);
-  }, [filteredOperations]);
-
-  const totalRemaining = useMemo(() => {
-    return filteredOperations.reduce((acc, op) => acc + (Number(op.remainingDue) || 0), 0);
-  }, [filteredOperations]);
-
-  const totalProfit = useMemo(() => {
-    return filteredOperations.reduce((acc, op) => acc + (Number(op.profit) || 0), 0);
-  }, [filteredOperations]);
-
-  const salesCount = filteredOperations.filter((op) => op.kind === 'sale').length;
-  const repairsCount = filteredOperations.filter((op) => op.kind === 'repair').length;
-  const creditsCount = filteredOperations.filter((op) => op.kind === 'credit_payment').length;
+  // Format date display for date picker pill
+  const formattedCustomDate = useMemo(() => {
+    if (!customDate) return '22/09/2026';
+    const parts = customDate.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return customDate;
+  }, [customDate]);
 
   const handleConfirmCancelSale = () => {
     if (!cancelModal.sale) return;
@@ -297,554 +357,649 @@ export default function SalesHistory({ onEditRepair }) {
     cancelSale(sale.id);
     toast.info(
       lang === 'ar'
-        ? `تم إلغاء عملية البيع ${sale.invoiceNumber} وإعادة السلع إلى المخزون بنجاح`
-        : lang === 'en'
-        ? `Sale ${sale.invoiceNumber} cancelled and items returned to inventory`
-        : `Vente ${sale.invoiceNumber} annulée et articles réintégrés en stock avec succès !`
+        ? `تم إلغاء عملية البيع ${sale.invoiceNumber} بنجاح`
+        : `Vente ${sale.invoiceNumber} annulée avec succès.`
     );
     setCancelModal({ open: false, sale: null });
   };
 
-  const getLocale = () => {
-    if (lang === 'ar') return 'ar-SA';
-    if (lang === 'en') return 'en-US';
-    return 'fr-FR';
-  };
-
-  // Helper date filter label
-  const getDateFilterLabel = () => {
-    if (dateFilter === 'today') return t('periodToday') || t('filterDateToday');
-    if (dateFilter === 'yesterday') return t('periodYesterday') || 'Hier';
-    if (dateFilter === '7d' || dateFilter === 'week') return t('period7d') || t('filterDateWeek');
-    if (dateFilter === '30d' || dateFilter === 'month') return t('period30d') || t('filterDateMonth');
-    if (dateFilter === 'custom') return customDate;
-    return t('allDates') || t('filterDateAll');
-  };
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Header */}
-      <div>
-        <h2 style={{ fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <History size={24} className="text-primary" />
-          {t('historyTitle')}
-        </h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-          {t('historySubtitle')}
-        </p>
-      </div>
-
-      {/* Aggregate KPI Stat Cards (Strictly follows active filters) */}
-      <div className="stats-grid">
-        {/* 1. Total Chiffre d'Affaires */}
-        <div className="stat-card">
-          <div className="stat-header">
-            <span className="stat-title">{t('totalRevenue')}</span>
-            <div className="stat-icon-wrapper" style={{ background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-primary)' }}>
-              <DollarSign size={18} />
-            </div>
-          </div>
-          <div className="stat-value privacy-blur">{formatMoney(totalVolume)}</div>
-          <div className="stat-footer">
-            <span>
-              {filteredOperations.length} {t('transactions')} ({salesCount} 🛒 / {repairsCount} 🔧 / {creditsCount} 💰) • {getDateFilterLabel()}
-            </span>
-          </div>
-        </div>
-
-        {/* 2. Total Encaissé */}
-        <div className="stat-card">
-          <div className="stat-header">
-            <span className="stat-title">{t('totalCollected')}</span>
-            <div className="stat-icon-wrapper" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-success)' }}>
-              <Banknote size={18} />
-            </div>
-          </div>
-          <div className="stat-value privacy-blur" style={{ color: 'var(--accent-success)' }}>
-            {formatMoney(totalCollected)}
-          </div>
-          <div className="stat-footer">
-            <span>{t('cashInRegister')} ({getDateFilterLabel()})</span>
-          </div>
-        </div>
-
-        {/* 3. Bénéfice Net Période - Admin Only */}
-        {isAdmin && (
-          <div className="stat-card">
-            <div className="stat-header">
-              <span className="stat-title">{t('netPeriodProfit')}</span>
-              <div className="stat-icon-wrapper" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-info)' }}>
-                <TrendingUp size={18} />
-              </div>
-            </div>
-            <div className="stat-value profit-blur" style={{ color: 'var(--accent-info)' }}>
-              +{formatMoney(totalProfit)}
-            </div>
-            <div className="stat-footer">
-              <span>{t('commercialMargin')} ({getDateFilterLabel()})</span>
-            </div>
-          </div>
-        )}
-
-        {/* 4. Crédits Accordés */}
-        <div className="stat-card">
-          <div className="stat-header">
-            <span className="stat-title">{t('grantedCredit')}</span>
-            <div className="stat-icon-wrapper" style={{ background: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-danger)' }}>
-              <CreditCard size={18} />
-            </div>
-          </div>
-          <div className="stat-value privacy-blur" style={{ color: totalRemaining > 0 ? 'var(--accent-danger)' : 'var(--text-secondary)' }}>
-            {formatMoney(totalRemaining)}
-          </div>
-          <div className="stat-footer">
-            <span>{t('remainingToCollect')} ({getDateFilterLabel()})</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Operation Type Switcher & Date Range Bar */}
-      <div
-        style={{
-          background: 'var(--bg-card)',
-          padding: '0.85rem 1rem',
-          borderRadius: '12px',
-          border: '1px solid var(--border-color)',
-          display: 'flex',
-          gap: '1rem',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        {/* Left: Operation Category Tabs */}
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          <button
-            className={`btn btn-sm ${typeFilter === 'all' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setTypeFilter('all')}
-          >
-            <Layers size={14} />
-            {t('journalTabAll')}
-          </button>
-          <button
-            className={`btn btn-sm ${typeFilter === 'sales' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setTypeFilter('sales')}
-          >
-            <ShoppingCart size={14} />
-            {t('journalTabSales')}
-          </button>
-          <button
-            className={`btn btn-sm ${typeFilter === 'repairs' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setTypeFilter('repairs')}
-          >
-            <Wrench size={14} />
-            {t('journalTabRepairs')}
-          </button>
-          <button
-            className={`btn btn-sm ${typeFilter === 'credits' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setTypeFilter('credits')}
-          >
-            <HandCoins size={14} />
-            {t('journalTabCredits')}
-          </button>
-        </div>
-
-        {/* Right: Date Range Selector */}
-        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <button
-            className={`btn btn-sm ${dateFilter === 'all' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('all')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('allDates') || t('filterDateAll')}
-          </button>
-          <button
-            className={`btn btn-sm ${dateFilter === 'today' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('today')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('periodToday') || t('filterDateToday')}
-          </button>
-          <button
-            className={`btn btn-sm ${dateFilter === 'yesterday' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('yesterday')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('periodYesterday') || 'Hier'}
-          </button>
-          <button
-            className={`btn btn-sm ${dateFilter === '7d' || dateFilter === 'week' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('7d')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('period7d') || t('filterDateWeek')}
-          </button>
-          <button
-            className={`btn btn-sm ${dateFilter === '30d' || dateFilter === 'month' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('30d')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('period30d') || t('filterDateMonth')}
-          </button>
-
-          {/* Date Picker Button / Input */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-            <button
-              className={`btn btn-sm ${dateFilter === 'custom' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setDateFilter('custom')}
-              style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-            >
-              <Calendar size={13} />
-              {t('periodCustom')}
-            </button>
-            {dateFilter === 'custom' && (
-              <input
-                type="date"
-                className="input"
-                value={customDate}
-                onChange={(e) => setCustomDate(e.target.value)}
-                style={{ padding: '0.25rem 0.5rem', fontSize: '0.78rem', width: 'auto' }}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Search Bar and View Mode Switcher */}
-      <div
-        className="ui-card"
-        style={{
-          padding: '0.85rem 1rem',
-          borderRadius: '12px',
-          border: '1px solid var(--border-color)',
-          display: 'flex',
-          gap: '0.75rem',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-      >
-        <div className="input-with-icon" style={{ flex: 1, minWidth: '240px' }}>
-          <Search size={16} />
-          <input
-            type="text"
-            className="form-input"
-            placeholder={t('historySearchPlaceholder')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        {/* Payment Filter Pills */}
-        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-          <button
-            className={`btn btn-sm ${paymentFilter === 'all' ? 'btn-secondary' : 'btn-ghost'}`}
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem' }}
-            onClick={() => setPaymentFilter('all')}
-          >
-            {t('all')}
-          </button>
-          <button
-            className={`btn btn-sm ${paymentFilter === 'cash' ? 'btn-secondary' : 'btn-ghost'}`}
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem' }}
-            onClick={() => setPaymentFilter('cash')}
-          >
-            💵 {t('cash')}
-          </button>
-          <button
-            className={`btn btn-sm ${paymentFilter === 'credit' ? 'btn-secondary' : 'btn-ghost'}`}
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem' }}
-            onClick={() => setPaymentFilter('credit')}
-          >
-            🔴 {t('credit')}
-          </button>
-          <button
-            className={`btn btn-sm ${paymentFilter === 'partial' ? 'btn-secondary' : 'btn-ghost'}`}
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem' }}
-            onClick={() => setPaymentFilter('partial')}
-          >
-            🟡 {t('partial')}
-          </button>
-        </div>
-
-        {/* View Mode Toggle (Table / Cards) */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2.5rem' }}>
+      
+      {/* 1. HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
         <div
           style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '12px',
+            background: 'rgba(245, 158, 11, 0.12)',
+            border: '1.5px solid #f59e0b',
             display: 'flex',
             alignItems: 'center',
-            background: 'var(--bg-secondary)',
-            padding: '3px',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
+            justifyContent: 'center',
+            color: '#f59e0b',
+            boxShadow: '0 0 14px rgba(245, 158, 11, 0.25)',
+            flexShrink: 0,
           }}
         >
-          <button
-            type="button"
-            className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{
-              padding: '0.35rem 0.65rem',
-              fontSize: '0.8rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              borderRadius: '6px',
-            }}
-            onClick={() => setViewMode('table')}
-            title={t('tableView')}
-          >
-            <LayoutList size={15} />
-            <span>{t('tableView')}</span>
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${viewMode === 'cards' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{
-              padding: '0.35rem 0.65rem',
-              fontSize: '0.8rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              borderRadius: '6px',
-            }}
-            onClick={() => setViewMode('cards')}
-            title={t('cardsView')}
-          >
-            <LayoutGrid size={15} />
-            <span>{t('cardsView')}</span>
-          </button>
+          <FileText size={22} strokeWidth={2.2} />
+        </div>
+        <div>
+          <h2 style={{ fontSize: '1.45rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+            Journal & Historique des Ventes
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.15rem 0 0 0' }}>
+            Consultation des transactions, tickets de caisse, réparations et règlements.
+          </p>
         </div>
       </div>
 
-      {/* Main Content: Table View OR Cards View */}
+      {/* 2. TOP 4 KPI CARDS */}
+      <div className="sales-kpi-grid-4">
+        
+        {/* KPI 1: Chiffre d'Affaires */}
+        <div className="dash-kpi-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dash-kpi-icon-wrap" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
+              <ShoppingCart size={18} />
+            </div>
+            <div className="dash-kpi-sparkbars" style={{ color: '#f59e0b' }}>
+              <div className="dash-kpi-sparkbar" style={{ height: '8px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '14px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '11px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '20px' }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              {t('metricRevenue') || "Chiffre d'Affaires"}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                {privacyMode ? '••••••' : formatMoney(kpiTotals.totalRevenue)}
+              </div>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center' }}>
+                ↗ +12%
+              </span>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              {kpiTotals.transactionsCount} {lang === 'ar' ? 'عمليات' : 'transactions'} • {periodBounds.periodLabel}
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 2: Total Encaissé */}
+        <div className="dash-kpi-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dash-kpi-icon-wrap" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}>
+              <Wallet size={18} />
+            </div>
+            <div className="dash-kpi-sparkbars" style={{ color: '#ef4444' }}>
+              <div className="dash-kpi-sparkbar" style={{ height: '14px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '10px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '18px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '12px' }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              Total Encaissé
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                {privacyMode ? '••••••' : formatMoney(kpiTotals.totalCollected)}
+              </div>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center' }}>
+                ↗ +8%
+              </span>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Espèces, cartes • {periodBounds.periodLabel}
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 3: Bénéfice Net Période */}
+        <div className="dash-kpi-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dash-kpi-icon-wrap" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308' }}>
+              <Coins size={18} />
+            </div>
+            <div className="dash-kpi-sparkbars" style={{ color: '#10b981' }}>
+              <div className="dash-kpi-sparkbar" style={{ height: '10px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '14px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '16px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '22px' }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              {t('metricNetProfit') || 'Bénéfice Net'} Période
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                {privacyMode ? '••••••' : formatMoney(kpiTotals.totalNetProfit)}
+              </div>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center' }}>
+                ↗ +18%
+              </span>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Marge bénéficiaire • {periodBounds.periodLabel}
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 4: Crédits Accordés */}
+        <div className="dash-kpi-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dash-kpi-icon-wrap" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>
+              <Users size={18} />
+            </div>
+            <div className="dash-kpi-sparkbars" style={{ color: '#ef4444' }}>
+              <div className="dash-kpi-sparkbar" style={{ height: '6px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '12px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '18px' }} />
+              <div className="dash-kpi-sparkbar" style={{ height: '14px' }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              Crédits Accordés
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                {privacyMode ? '••••••' : formatMoney(kpiTotals.totalCreditsGranted)}
+              </div>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center' }}>
+                ↗ +5%
+              </span>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Reste à recouvrer • {periodBounds.periodLabel}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* 3. FILTER ROW 1: OPERATION TYPES + PERIOD BUTTONS */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+        
+        {/* Left: Operation Type Pills */}
+        <div className="dash-period-pill-group">
+          <button
+            type="button"
+            className={`dash-period-btn ${typeFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setTypeFilter('all')}
+          >
+            Toutes les Opérations
+          </button>
+          <button
+            type="button"
+            className={`dash-period-btn ${typeFilter === 'sales' ? 'active' : ''}`}
+            onClick={() => setTypeFilter('sales')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <ShoppingCart size={14} />
+            <span>Ventes au Comptoir</span>
+          </button>
+          <button
+            type="button"
+            className={`dash-period-btn ${typeFilter === 'repairs' ? 'active' : ''}`}
+            onClick={() => setTypeFilter('repairs')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <Wrench size={14} />
+            <span>Fiches Réparation & SAV</span>
+          </button>
+          <button
+            type="button"
+            className={`dash-period-btn ${typeFilter === 'credits' ? 'active' : ''}`}
+            onClick={() => setTypeFilter('credits')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <Coins size={14} />
+            <span>Crédits Collectés</span>
+          </button>
+        </div>
+
+        {/* Right: Date Range Pills + Date Picker */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
+          <div className="dash-period-pill-group">
+            <button
+              type="button"
+              className={`dash-period-btn ${dateFilter === 'today' ? 'active' : ''}`}
+              onClick={() => setDateFilter('today')}
+            >
+              Aujourd'hui
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${dateFilter === 'yesterday' ? 'active' : ''}`}
+              onClick={() => setDateFilter('yesterday')}
+            >
+              Hier
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${dateFilter === '7d' ? 'active' : ''}`}
+              onClick={() => setDateFilter('7d')}
+            >
+              7 Derniers Jours
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${dateFilter === '30d' ? 'active' : ''}`}
+              onClick={() => setDateFilter('30d')}
+            >
+              30 Derniers Jours
+            </button>
+          </div>
+
+          {/* Date Picker Pill */}
+          <div className="dash-date-picker-wrap">
+            <Calendar size={14} style={{ color: 'var(--accent-primary)' }} />
+            <span>{formattedCustomDate}</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▾</span>
+            <input
+              type="date"
+              value={customDate}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setCustomDate(e.target.value);
+                  setDateFilter('custom');
+                }
+              }}
+            />
+          </div>
+        </div>
+
+      </div>
+
+      {/* 4. FILTER ROW 2: SEARCH INPUT + PAYMENT METHODS + VIEW TOGGLE */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+        
+        {/* Search Bar Input */}
+        <div
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            width: '100%',
+            maxWidth: '460px',
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            padding: '0.45rem 0.85rem',
+            gap: '0.6rem',
+          }}
+        >
+          <Search size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+          <input
+            type="text"
+            value={searchQuery}
+            placeholder="Rechercher par N° facture, ticket SAV, client, article, modèle..."
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--text-primary)',
+              fontSize: '0.83rem',
+              width: '100%',
+            }}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Middle Payment Method Pills + Right View Mode */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+          
+          <div className="dash-period-pill-group">
+            <button
+              type="button"
+              className={`dash-period-btn ${paymentFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setPaymentFilter('all')}
+            >
+              Tous
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${paymentFilter === 'cash' ? 'active' : ''}`}
+              onClick={() => setPaymentFilter('cash')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981' }} />
+              <span>Espèces / Cash</span>
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${paymentFilter === 'card' ? 'active' : ''}`}
+              onClick={() => setPaymentFilter('card')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#38bdf8' }} />
+              <span>Carte</span>
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${paymentFilter === 'credit' ? 'active' : ''}`}
+              onClick={() => setPaymentFilter('credit')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#ef4444' }} />
+              <span>Crédit</span>
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${paymentFilter === 'partial' ? 'active' : ''}`}
+              onClick={() => setPaymentFilter('partial')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#f59e0b' }} />
+              <span>Partiel</span>
+            </button>
+          </div>
+
+          {/* View Mode Toggle: Tableau / Cartes */}
+          <div className="dash-period-pill-group">
+            <button
+              type="button"
+              className={`dash-period-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <LayoutList size={14} />
+              <span>Tableau</span>
+            </button>
+            <button
+              type="button"
+              className={`dash-period-btn ${viewMode === 'cards' ? 'active' : ''}`}
+              onClick={() => setViewMode('cards')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <LayoutGrid size={14} />
+              <span>Cartes</span>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* 5. TRANSACTIONS TABLE VIEW */}
       {viewMode === 'table' ? (
-        /* Unified Journal Table */
-        <div className="ui-card" style={{ padding: '0.5rem 0' }}>
-          <div className="table-responsive">
-            <table className="custom-table">
+        <div
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '14px',
+            overflow: 'hidden',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
               <thead>
-                <tr>
-                  <th>{t('ticketNumCol')}</th>
-                  <th>{t('colDateTime')}</th>
-                  <th>{t('colClient')}</th>
-                  <th>{t('itemsSoldCol')}</th>
-                  <th>{t('colTotalAmount')}</th>
-                  <th>{t('totalEncaisseCol')}</th>
-                  {isAdmin && <th>{t('netProfitCol')}</th>}
-                  <th>{t('paymentTypeCol')}</th>
-                  <th style={{ textAlign: 'end' }}>{t('colActions')}</th>
+                <tr
+                  style={{
+                    color: 'var(--text-muted)',
+                    borderBottom: '1px solid var(--border-color)',
+                    background: 'var(--bg-input)',
+                    fontSize: '0.72rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  <th style={{ padding: '0.85rem 1rem' }}>RÉF / N°</th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>DATE & HEURE</th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>CLIENT</th>
+                  <th style={{ padding: '0.85rem 0.75rem' }}>ARTICLES / APPAREIL & DIAGNOSTIC</th>
+                  <th style={{ padding: '0.85rem 0.75rem', textAlign: 'right' }}>TOTAL</th>
+                  <th style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>ENCAISSÉ / RESTE</th>
+                  <th style={{ padding: '0.85rem 0.75rem', textAlign: 'right' }}>MARGE NETTE</th>
+                  <th style={{ padding: '0.85rem 0.75rem', textAlign: 'center' }}>RÈGLEMENT / STATUT</th>
+                  <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredOperations.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 9 : 8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                      {t('noSalesRecorded')}
+                    <td colSpan={9} style={{ padding: '2.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Aucune transaction trouvée pour ces filtres
                     </td>
                   </tr>
                 ) : (
-                  filteredOperations.map((op) => {
+                  filteredOperations.map((op, idx) => {
                     const isSale = op.kind === 'sale';
                     const isRepair = op.kind === 'repair';
-                    const isCreditPmt = op.kind === 'credit_payment';
-                    const isDelivered = op.status === 'delivered';
+                    const isCredit = op.kind === 'credit_payment';
+
+                    // Format date
+                    const dateObj = new Date(op.date);
+                    const dateStr = !isNaN(dateObj.getTime())
+                      ? `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()} ${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`
+                      : op.date;
 
                     return (
-                      <tr key={op.id}>
-                        {/* 1. Reference & Type Badge */}
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                            <span className={`badge ${isSale ? 'badge-blue' : isRepair ? 'badge-purple' : 'badge-green'}`}>
-                              {isSale ? <ShoppingCart size={11} /> : isRepair ? <Wrench size={11} /> : <HandCoins size={11} />}
-                              {op.ref}
-                            </span>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                              {isSale ? t('opTypeSale') : isRepair ? t('opTypeRepair') : t('opTypeCredit')}
-                            </span>
-                          </div>
+                      <tr
+                        key={op.id || idx}
+                        style={{
+                          borderBottom: '1px solid var(--border-color)',
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        {/* 1. Ref Badge */}
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <span
+                            style={{
+                              padding: '0.2rem 0.55rem',
+                              borderRadius: '6px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                              background: isSale
+                                ? 'rgba(99, 102, 241, 0.18)'
+                                : isRepair
+                                ? 'rgba(245, 158, 11, 0.18)'
+                                : 'rgba(236, 72, 153, 0.18)',
+                              color: isSale ? '#818cf8' : isRepair ? '#fbbf24' : '#f472b6',
+                              border: `1px solid ${isSale ? 'rgba(99, 102, 241, 0.3)' : isRepair ? 'rgba(245, 158, 11, 0.3)' : 'rgba(236, 72, 153, 0.3)'}`,
+                            }}
+                          >
+                            {op.ref}
+                          </span>
                         </td>
 
-                        {/* 2. Date & Time */}
-                        <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                          {new Date(op.date).toLocaleString(getLocale())}
+                        {/* 2. Date & Heure */}
+                        <td style={{ padding: '0.85rem 0.75rem', color: 'var(--text-secondary)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                          {dateStr}
                         </td>
 
                         {/* 3. Client */}
-                        <td>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{op.clientName}</div>
-                          {op.clientPhone && (
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{op.clientPhone}</span>
-                          )}
+                        <td style={{ padding: '0.85rem 0.75rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                          {op.clientName}
                         </td>
 
-                        {/* 4. Details (Items or Device Diagnostic or Credit Settlement) */}
-                        <td style={{ maxWidth: '280px' }}>
-                          {isCreditPmt ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem' }}>
-                              <HandCoins size={15} style={{ color: 'var(--accent-success)', flexShrink: 0 }} />
-                              <div>
-                                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t('opTypeCredit')}</div>
-                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.76rem' }}>
-                                  {op.raw?.note || (lang === 'ar' ? 'سداد نقداً' : lang === 'en' ? 'Cash settlement' : 'Règlement espèces')}
-                                </div>
-                              </div>
-                            </div>
-                          ) : isSale ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                              {op.itemsList.map((it, idx) => {
-                                const matchingProd = (products || []).find((p) => p.id === it.productId || p.name === it.name);
-                                const img = it.image || matchingProd?.image;
-                                return (
-                                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                    {img ? (
-                                      <img
-                                        src={img}
-                                        alt={it.name}
-                                        style={{ width: '22px', height: '22px', borderRadius: '4px', objectFit: 'contain', flexShrink: 0, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}
-                                        onError={(e) => { e.target.style.display = 'none'; }}
-                                      />
-                                    ) : (
-                                      <Package size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                                    )}
-                                    <span style={{ fontSize: '0.82rem' }}>
-                                      {it.name} <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>(x{it.quantity})</span>
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: '0.82rem' }}>
-                              <strong style={{ color: 'var(--text-primary)' }}>{op.deviceModel}</strong>
-                              <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
-                                {op.issueDescription}
-                              </div>
-                              {op.pieceName && (
-                                <div style={{ color: 'var(--accent-info)', fontSize: '0.74rem' }}>
-                                  🔧 {op.pieceName}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* 5. Total Amount */}
-                        <td>
-                          <strong className="privacy-blur" style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                            {formatMoney(op.totalAmount)}
-                          </strong>
-                        </td>
-
-                        {/* 6. Collected / Remaining */}
-                        <td>
-                          <div className="privacy-blur" style={{ fontSize: '0.82rem', color: 'var(--accent-success)', fontWeight: 600 }}>
-                            {t('paid')}: {formatMoney(op.amountPaid)}
-                          </div>
-                          {isCreditPmt ? (
-                            <span className="badge badge-green" style={{ fontSize: '0.65rem', marginTop: '0.2rem' }}>
-                              <CheckCircle2 size={10} /> {t('paid') || 'Encaissé'}
-                            </span>
-                          ) : op.remainingDue > 0 ? (
-                            <div className="privacy-blur" style={{ fontSize: '0.82rem', color: 'var(--accent-danger)', fontWeight: 700 }}>
-                              {t('credit')}: {formatMoney(op.remainingDue)}
-                            </div>
-                          ) : (
-                            !isSale && isDelivered && (
-                              <span className="badge badge-green" style={{ fontSize: '0.65rem', marginTop: '0.2rem' }}>
-                                <CheckCircle2 size={10} /> {t('repairDeliveredSettled')}
-                              </span>
-                            )
-                          )}
-                        </td>
-
-                        {/* 7. Profit Margin */}
-                        {isAdmin && (
-                          <td className="profit-blur">
-                            {isCreditPmt ? (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
-                            ) : (
-                              <span style={{ color: 'var(--accent-success)', fontWeight: 700, fontSize: '0.85rem' }}>
-                                +{formatMoney(op.profit)}
-                              </span>
-                            )}
-                          </td>
-                        )}
-
-                        {/* 8. Payment Method & Status */}
-                        <td>
-                          {isCreditPmt ? (
-                            <span className="badge badge-green">💵 {t('cash')}</span>
-                          ) : isSale ? (
-                            <>
-                              {op.paymentType === 'cash' && <span className="badge badge-green">{t('cash')}</span>}
-                              {op.paymentType === 'credit' && <span className="badge badge-red">{t('credit')}</span>}
-                              {op.paymentType === 'partial' && <span className="badge badge-yellow">{t('partial')}</span>}
-                            </>
-                          ) : (
-                            <>
-                              {isDelivered ? (
-                                <span className="badge badge-purple">{t('repairDeliveredSettled')}</span>
-                              ) : op.status === 'ready' ? (
-                                <span className="badge badge-green">{t('statusReady')}</span>
-                              ) : op.status === 'in_progress' ? (
-                                <span className="badge badge-yellow">{t('statusInProgress')}</span>
+                        {/* 4. Articles / Appareil */}
+                        <td style={{ padding: '0.65rem 0.75rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                            <div
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                background: 'var(--bg-input)',
+                                border: '1px solid var(--border-color)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: isSale ? '#818cf8' : isRepair ? '#fbbf24' : '#f472b6',
+                                flexShrink: 0,
+                                overflow: 'hidden',
+                              }}
+                            >
+                              {op.image ? (
+                                <img src={op.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : isSale ? (
+                                <Package size={15} />
+                              ) : isRepair ? (
+                                <Smartphone size={15} />
                               ) : (
-                                <span className="badge badge-blue">{t('statusReceived')}</span>
+                                <Coins size={15} />
                               )}
-                            </>
+                            </div>
+                            <div style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                              {op.detailsSummary}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 5. Total */}
+                        <td style={{ padding: '0.85rem 0.75rem', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                          {privacyMode ? '••••' : formatMoney(op.totalAmount)}
+                        </td>
+
+                        {/* 6. Encaissé / Reste */}
+                        <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontWeight: 700, color: '#10b981' }}>
+                            {privacyMode ? '•••' : formatMoney(op.amountPaid)}
+                          </span>
+                          {Number(op.remainingDue) > 0 ? (
+                            <span style={{ marginLeft: '0.45rem', fontWeight: 600, color: '#ef4444', fontSize: '0.75rem' }}>
+                              {privacyMode ? '•••' : formatMoney(op.remainingDue)}
+                            </span>
+                          ) : (
+                            <span style={{ marginLeft: '0.45rem', color: '#10b981', fontSize: '0.75rem', opacity: 0.8 }}>
+                              0.00 DT
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 7. Marge Nette */}
+                        <td style={{ padding: '0.85rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#10b981', whiteSpace: 'nowrap' }}>
+                          {privacyMode ? '••••' : `+${formatMoney(op.profit || 0)}`}
+                        </td>
+
+                        {/* 8. Règlement / Statut */}
+                        <td style={{ padding: '0.85rem 0.75rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {op.status === 'settled' || op.status === 'delivered' ? (
+                            <span
+                              style={{
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                color: '#10b981',
+                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                padding: '0.2rem 0.6rem',
+                                borderRadius: '6px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              Clôturé & Payé
+                            </span>
+                          ) : op.status === 'partial' ? (
+                            <span
+                              style={{
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                color: '#f59e0b',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                padding: '0.2rem 0.6rem',
+                                borderRadius: '6px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              Partiel
+                            </span>
+                          ) : op.status === 'credit' ? (
+                            <span
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                color: '#ef4444',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                padding: '0.2rem 0.6rem',
+                                borderRadius: '6px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              Crédit
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                color: '#f59e0b',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                padding: '0.2rem 0.6rem',
+                                borderRadius: '6px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              En cours
+                            </span>
                           )}
                         </td>
 
                         {/* 9. Actions */}
-                        <td style={{ textAlign: 'end' }}>
-                          <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
-                            {!isCreditPmt && (
-                              <button
-                                className="btn-icon btn-outline btn-sm"
-                                title={t('reprintBtn')}
-                                onClick={() =>
-                                  setActiveReceipt({
-                                    type: isSale ? 'sale' : 'repair',
-                                    data: op.raw,
-                                  })
-                                }
-                              >
-                                <Printer size={14} />
-                              </button>
-                            )}
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.35rem' }}>
+                            {/* View Receipt */}
+                            <button
+                              type="button"
+                              className="dash-action-btn"
+                              onClick={() => {
+                                if (isSale) setActiveReceipt({ type: 'sale', data: op.raw });
+                                else if (isRepair) setActiveReceipt({ type: 'repair', data: op.raw });
+                                else if (isCredit) setActiveReceipt({ type: 'credit_payment', data: op.raw });
+                              }}
+                              title="Voir le reçu"
+                            >
+                              <Eye size={15} />
+                            </button>
 
-                            {isSale && isAdmin && (
-                              <button
-                                className="btn-icon btn-outline btn-sm"
-                                title={t('editSale') || 'Modifier la Vente / Assigner Client'}
-                                onClick={() => setEditSaleModal({ open: true, sale: op.raw })}
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                            )}
+                            {/* Print Receipt */}
+                            <button
+                              type="button"
+                              className="dash-action-btn"
+                              onClick={() => {
+                                if (isSale) setActiveReceipt({ type: 'sale', data: op.raw, autoPrint: true });
+                                else if (isRepair) setActiveReceipt({ type: 'repair', data: op.raw, autoPrint: true });
+                                else if (isCredit) setActiveReceipt({ type: 'credit_payment', data: op.raw, autoPrint: true });
+                              }}
+                              title="Imprimer le ticket"
+                            >
+                              <Printer size={15} />
+                            </button>
 
-                            {isRepair && isAdmin && (
+                            {/* Edit Action (Admin only) */}
+                            {isAdmin && (
                               <button
-                                className="btn-icon btn-outline btn-sm"
-                                title={t('editRepairModal') || 'Modifier le Ticket / Assigner Client'}
+                                type="button"
+                                className="dash-action-btn"
                                 onClick={() => {
-                                  if (onEditRepair) {
-                                    onEditRepair(op.raw);
-                                  } else {
-                                    setEditRepairModal({ open: true, repair: op.raw });
+                                  if (isSale) setEditSaleModal({ open: true, sale: op.raw });
+                                  else if (isRepair) {
+                                    if (onEditRepair) onEditRepair(op.raw);
+                                    else setEditRepairModal({ open: true, repair: op.raw });
                                   }
                                 }}
+                                title="Modifier la transaction"
                               >
-                                <Edit2 size={13} />
-                              </button>
-                            )}
-
-                            {isSale && isAdmin && (
-                              <button
-                                className="btn-icon btn-outline btn-sm"
-                                title={t('cancelSale')}
-                                style={{ color: 'var(--accent-danger)' }}
-                                onClick={() => setCancelModal({ open: true, sale: op.raw })}
-                              >
-                                <RotateCcw size={14} />
+                                <Edit2 size={15} />
                               </button>
                             )}
                           </div>
@@ -858,310 +1013,127 @@ export default function SalesHistory({ onEditRepair }) {
           </div>
         </div>
       ) : (
-        /* Unified Cards View */
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: '1rem' }}>
-          {filteredOperations.length === 0 ? (
-            <div
-              className="ui-card"
-              style={{
-                gridColumn: '1 / -1',
-                padding: '3rem',
-                textAlign: 'center',
-                color: 'var(--text-muted)',
-              }}
-            >
-              {t('noSalesRecorded')}
-            </div>
-          ) : (
-            filteredOperations.map((op) => {
-              const isSale = op.kind === 'sale';
-              const isRepair = op.kind === 'repair';
-              const isCreditPmt = op.kind === 'credit_payment';
-              const isDelivered = op.status === 'delivered';
-
-              return (
-                <div
-                  key={op.id}
-                  className="ui-card"
+        /* Cards View Mode */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+          {filteredOperations.map((op) => (
+            <div key={op.id} className="dash-card" style={{ gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span
                   style={{
-                    padding: '1.1rem',
-                    borderRadius: '12px',
-                    border: '1px solid var(--border-color)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: '0.85rem',
-                    transition: 'all 0.2s ease',
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '6px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    background: op.kind === 'sale' ? 'rgba(99, 102, 241, 0.18)' : op.kind === 'repair' ? 'rgba(245, 158, 11, 0.18)' : 'rgba(236, 72, 153, 0.18)',
+                    color: op.kind === 'sale' ? '#818cf8' : op.kind === 'repair' ? '#fbbf24' : '#f472b6',
                   }}
                 >
-                  {/* Card Header: Type, Ref & Date */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                      <span
-                        className={`badge ${isSale ? 'badge-blue' : isRepair ? 'badge-purple' : 'badge-green'}`}
-                        style={{ fontSize: '0.78rem', fontWeight: 700 }}
-                      >
-                        {isSale ? <ShoppingCart size={13} /> : isRepair ? <Wrench size={13} /> : <HandCoins size={13} />}
-                        {op.ref}
-                      </span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <Calendar size={11} />
-                        {new Date(op.date).toLocaleString(getLocale())}
-                      </span>
-                    </div>
+                  {op.ref}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {new Date(op.date).toLocaleDateString(lang === 'ar' ? 'ar-TN' : 'fr-FR')}
+                </span>
+              </div>
 
-                    {/* Status / Payment Badge */}
-                    <div>
-                      {isCreditPmt ? (
-                        <span className="badge badge-green">{t('opTypeCredit')}</span>
-                      ) : isSale ? (
-                        <>
-                          {op.paymentType === 'cash' && <span className="badge badge-green">{t('cash')}</span>}
-                          {op.paymentType === 'credit' && <span className="badge badge-red">{t('credit')}</span>}
-                          {op.paymentType === 'partial' && <span className="badge badge-yellow">{t('partial')}</span>}
-                        </>
-                      ) : (
-                        <>
-                          {isDelivered ? (
-                            <span className="badge badge-purple">{t('repairDeliveredSettled')}</span>
-                          ) : op.status === 'ready' ? (
-                            <span className="badge badge-green">{t('statusReady')}</span>
-                          ) : op.status === 'in_progress' ? (
-                            <span className="badge badge-yellow">{t('statusInProgress')}</span>
-                          ) : (
-                            <span className="badge badge-blue">{t('statusReceived')}</span>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: op.kind === 'sale' ? '#818cf8' : op.kind === 'repair' ? '#fbbf24' : '#f472b6',
+                    flexShrink: 0,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {op.image ? (
+                    <img src={op.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : op.kind === 'sale' ? (
+                    <Package size={16} />
+                  ) : op.kind === 'repair' ? (
+                    <Smartphone size={16} />
+                  ) : (
+                    <Coins size={16} />
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>{op.clientName}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.detailsSummary}</div>
+                </div>
+              </div>
 
-                  {/* Customer Information */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '0.5rem 0.65rem',
-                      background: 'var(--bg-secondary)',
-                      borderRadius: '8px',
-                      fontSize: '0.82rem',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
-                      <User size={14} style={{ color: 'var(--accent-primary)' }} />
-                      <span>{op.clientName}</span>
-                    </div>
-                    {op.clientPhone && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        <Phone size={12} />
-                        <span>{op.clientPhone}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Details Summary (Items or Repair Diagnosis or Credit Settlement) */}
-                  <div
-                    style={{
-                      fontSize: '0.8rem',
-                      color: 'var(--text-secondary)',
-                      background: 'var(--bg-input)',
-                      padding: '0.65rem',
-                      borderRadius: '8px',
-                      border: '1px dashed var(--border-color)',
-                      minHeight: '52px',
-                    }}
-                  >
-                    {isCreditPmt ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
-                        <HandCoins size={18} style={{ color: 'var(--accent-success)', flexShrink: 0 }} />
-                        <div>
-                          <strong style={{ color: 'var(--text-primary)', fontSize: '0.82rem' }}>{t('opTypeCredit')}</strong>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                            {op.raw?.note || (lang === 'ar' ? 'سداد نقداً' : lang === 'en' ? 'Cash settlement' : 'Règlement espèces')}
-                          </div>
-                        </div>
-                      </div>
-                    ) : isSale ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                        {op.itemsList.slice(0, 3).map((it, idx) => {
-                          const matchingProd = (products || []).find((p) => p.id === it.productId || p.name === it.name);
-                          const img = it.image || matchingProd?.image;
-                          return (
-                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', overflow: 'hidden' }}>
-                                {img ? (
-                                  <img
-                                    src={img}
-                                    alt={it.name}
-                                    style={{ width: '22px', height: '22px', borderRadius: '4px', objectFit: 'contain', flexShrink: 0, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}
-                                    onError={(e) => { e.target.style.display = 'none'; }}
-                                  />
-                                ) : (
-                                  <Package size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                                )}
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
-                                  {it.name}
-                                </span>
-                              </div>
-                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.74rem', flexShrink: 0 }}>
-                                x{it.quantity}
-                              </span>
-                            </div>
-                          );
-                        })}
-                        {op.itemsList.length > 3 && (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--accent-primary)', fontStyle: 'italic' }}>
-                            +{op.itemsList.length - 3} {t('items')}...
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div>
-                        <strong style={{ color: 'var(--text-primary)', display: 'block' }}>{op.deviceModel}</strong>
-                        <div style={{ fontSize: '0.75rem', marginTop: '0.15rem' }}>{op.issueDescription}</div>
-                        {op.pieceName && (
-                          <div style={{ color: 'var(--accent-info)', fontSize: '0.72rem', marginTop: '0.2rem' }}>
-                            🔧 {op.pieceName}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Financial breakdown */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.35rem',
-                      paddingTop: '0.4rem',
-                      borderTop: '1px solid var(--border-color)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t('colTotalAmount')} :</span>
-                      <strong className="privacy-blur" style={{ fontSize: '1.05rem', color: 'var(--text-primary)' }}>
-                        {formatMoney(op.totalAmount)}
-                      </strong>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
-                      <span className="privacy-blur" style={{ color: 'var(--accent-success)', fontWeight: 600 }}>
-                        {t('paid')}: {formatMoney(op.amountPaid)}
-                      </span>
-                      {op.remainingDue > 0 ? (
-                        <span className="privacy-blur" style={{ color: 'var(--accent-danger)', fontWeight: 700 }}>
-                          {t('credit')}: {formatMoney(op.remainingDue)}
-                        </span>
-                      ) : isCreditPmt ? (
-                        <span style={{ color: 'var(--accent-success)', fontWeight: 600 }}>
-                          ✓ {t('paid') || 'Encaissé'}
-                        </span>
-                      ) : (
-                        isAdmin && (
-                          <span className="profit-blur" style={{ color: 'var(--accent-info)', fontWeight: 600 }}>
-                            {t('netProfitCol')}: +{formatMoney(op.profit)}
-                          </span>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions Footer */}
-                  <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '0.25rem' }}>
-                    {!isCreditPmt && (
-                      <button
-                        className="btn btn-outline btn-sm"
-                        style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.35rem' }}
-                        onClick={() =>
-                          setActiveReceipt({
-                            type: isSale ? 'sale' : 'repair',
-                            data: op.raw,
-                          })
-                        }
-                      >
-                        <Printer size={14} />
-                        <span>{t('reprintBtn')}</span>
-                      </button>
-                    )}
-
-                    {isSale && isAdmin && (
-                      <button
-                        className="btn btn-outline btn-sm"
-                        title={t('editSale') || 'Modifier la Vente / Assigner Client'}
-                        onClick={() => setEditSaleModal({ open: true, sale: op.raw })}
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                    )}
-
-                    {isRepair && isAdmin && (
-                      <button
-                        className="btn btn-outline btn-sm"
-                        title={t('editRepairModal') || 'Modifier le Ticket / Assigner Client'}
-                        onClick={() => {
-                          if (onEditRepair) {
-                            onEditRepair(op.raw);
-                          } else {
-                            setEditRepairModal({ open: true, repair: op.raw });
-                          }
-                        }}
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                    )}
-
-                    {isSale && isAdmin && (
-                      <button
-                        className="btn btn-outline btn-sm"
-                        style={{ color: 'var(--accent-danger)', borderColor: 'var(--accent-danger)' }}
-                        title={t('cancelSale')}
-                        onClick={() => setCancelModal({ open: true, sale: op.raw })}
-                      >
-                        <RotateCcw size={14} />
-                      </button>
-                    )}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Total Transaction</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {privacyMode ? '••••' : formatMoney(op.totalAmount)}
                   </div>
                 </div>
-              );
-            })
-          )}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Marge Nette</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#10b981' }}>
+                    {privacyMode ? '••••' : `+${formatMoney(op.profit || 0)}`}
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions Footer in Cards View */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.55rem' }}>
+                <button
+                  type="button"
+                  className="dash-action-btn"
+                  onClick={() => {
+                    if (op.kind === 'sale') setActiveReceipt({ type: 'sale', data: op.raw });
+                    else if (op.kind === 'repair') setActiveReceipt({ type: 'repair', data: op.raw });
+                    else if (op.kind === 'credit_payment') setActiveReceipt({ type: 'credit_payment', data: op.raw });
+                  }}
+                  title="Voir le reçu"
+                >
+                  <Eye size={15} />
+                </button>
+
+                <button
+                  type="button"
+                  className="dash-action-btn"
+                  onClick={() => {
+                    if (op.kind === 'sale') setActiveReceipt({ type: 'sale', data: op.raw, autoPrint: true });
+                    else if (op.kind === 'repair') setActiveReceipt({ type: 'repair', data: op.raw, autoPrint: true });
+                    else if (op.kind === 'credit_payment') setActiveReceipt({ type: 'credit_payment', data: op.raw, autoPrint: true });
+                  }}
+                  title="Imprimer le ticket"
+                >
+                  <Printer size={15} />
+                </button>
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="dash-action-btn"
+                    onClick={() => {
+                      if (op.kind === 'sale') setEditSaleModal({ open: true, sale: op.raw });
+                      else if (op.kind === 'repair') {
+                        if (onEditRepair) onEditRepair(op.raw);
+                        else setEditRepairModal({ open: true, repair: op.raw });
+                      }
+                    }}
+                    title="Modifier la transaction"
+                  >
+                    <Edit2 size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Modal for Cancelling a Sale without browser alert */}
-      {cancelModal.open && cancelModal.sale && (
-        <ConfirmDeleteModal
-          title={`${t('cancelSale')} : "${cancelModal.sale.invoiceNumber}"`}
-          message={
-            lang === 'ar'
-              ? `هل أنت متأكد من إلغاء عملية البيع "${cancelModal.sale.invoiceNumber}"؟ ستتم إعادة المنتجات للمخزون تلقائياً.`
-              : lang === 'en'
-              ? `Are you sure you want to cancel sale "${cancelModal.sale.invoiceNumber}"? Items will be restocked.`
-              : `Confirmez-vous l'annulation de la vente "${cancelModal.sale.invoiceNumber}" ? Les articles vendus seront automatiquement réintégrés dans le stock.`
-          }
-          itemDetails={{
-            title: cancelModal.sale.invoiceNumber,
-            subtitle: cancelModal.sale.clientName || 'Client Comptoir',
-            value: formatMoney(cancelModal.sale.totalAmount),
-            valueColor: 'var(--accent-danger)',
-          }}
-          warningText={
-            lang === 'ar'
-              ? 'سيتم حذف عملية البيع وخصم مبلغها من الإحصائيات اليومية.'
-              : lang === 'en'
-              ? 'The sale will be cancelled and revenue subtracted from daily totals.'
-              : 'La vente sera annulée et son montant sera déduit du chiffre d’affaires du jour.'
-          }
-          onConfirm={handleConfirmCancelSale}
-          onClose={() => setCancelModal({ open: false, sale: null })}
-          confirmButtonText={lang === 'ar' ? 'تأكيد إلغاء البيع' : lang === 'en' ? 'Cancel Sale' : 'Annuler la Vente'}
-        />
-      )}
-
       {/* Edit Sale Modal */}
-      {editSaleModal.open && editSaleModal.sale && (
+      {editSaleModal.open && (
         <EditSaleModal
           sale={editSaleModal.sale}
           onClose={() => setEditSaleModal({ open: false, sale: null })}
@@ -1169,12 +1141,25 @@ export default function SalesHistory({ onEditRepair }) {
       )}
 
       {/* Edit Repair Modal */}
-      {editRepairModal.open && editRepairModal.repair && (
+      {editRepairModal.open && (
         <RepairModal
-          repair={editRepairModal.repair}
+          isOpen={editRepairModal.open}
+          repairToEdit={editRepairModal.repair}
           onClose={() => setEditRepairModal({ open: false, repair: null })}
         />
       )}
+
+      {/* Cancel Sale Modal */}
+      {cancelModal.open && (
+        <ConfirmDeleteModal
+          isOpen={cancelModal.open}
+          title="Annuler la vente"
+          message={`Êtes-vous sûr de vouloir annuler la vente ${cancelModal.sale?.invoiceNumber} ? Les articles seront réintégrés en stock.`}
+          onConfirm={handleConfirmCancelSale}
+          onClose={() => setCancelModal({ open: false, sale: null })}
+        />
+      )}
+
     </div>
   );
 }

@@ -39,6 +39,14 @@ export default function PaymentModal({ cart, totalAmount: initialTotal, totalPro
   );
   const [notes, setNotes] = useState('');
 
+  const getInitialDateTime = () => {
+    const d = new Date();
+    const tzOffset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+  };
+
+  const [saleDate, setSaleDate] = useState(getInitialDateTime);
+
   // Sorted list of declared loyalty clients (Alphabetical A-Z)
   const sortedLoyaltyClients = useMemo(() => {
     return (clients || [])
@@ -172,6 +180,15 @@ export default function PaymentModal({ cart, totalAmount: initialTotal, totalPro
 
     const defaultClientName = lang === 'ar' ? 'زبون عابر' : lang === 'en' ? 'Counter Client' : 'Client Comptoir';
 
+    let finalSaleDateIso = new Date().toISOString();
+    if (saleDate) {
+      try {
+        finalSaleDateIso = new Date(saleDate).toISOString();
+      } catch {
+        finalSaleDateIso = new Date().toISOString();
+      }
+    }
+
     const saleRecord = {
       clientId: selectedClientId || null,
       items: cart,
@@ -188,6 +205,7 @@ export default function PaymentModal({ cart, totalAmount: initialTotal, totalPro
       creditDueDate: remainingCredit > 0 ? creditDueDate : null,
       isAgreedPrice: isDiscountAgreement,
       notes: notes.trim(),
+      date: finalSaleDateIso,
     };
 
     const createdSale = processSale(saleRecord);
@@ -832,6 +850,46 @@ export default function PaymentModal({ cart, totalAmount: initialTotal, totalPro
                 </div>
               </div>
             )}
+
+            {/* Date de la Vente (par défaut aujourd'hui / maintenant, modifiable pour rattraper des ventes passées oubliées) */}
+            <div
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '12px',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
+                  <Calendar size={15} className="text-primary" />
+                  <span>{t('saleDate') || 'Date & Heure de la Vente'}</span>
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{ fontSize: '0.74rem', padding: '0.2rem 0.55rem', borderRadius: '6px' }}
+                  onClick={() => setSaleDate(getInitialDateTime())}
+                  title={lang === 'ar' ? 'إعادة التعيين إلى الوقت الحالي' : 'Réinitialiser à la date et heure actuelles'}
+                >
+                  <Sparkles size={12} style={{ marginRight: '0.25rem' }} />
+                  {t('todayNow') || "Aujourd'hui / Maintenant"}
+                </button>
+              </div>
+
+              <input
+                type="datetime-local"
+                className="form-input"
+                style={{ fontSize: '0.92rem', fontWeight: 600 }}
+                value={saleDate}
+                onChange={(e) => setSaleDate(e.target.value)}
+                required
+              />
+              <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                {t('saleDateHelper') || "Par défaut aujourd'hui (modifiable pour enregistrer des ventes passées oubliées)"}
+              </div>
+            </div>
           </div>
 
           <div className="modal-footer" style={{ gap: '0.75rem' }}>

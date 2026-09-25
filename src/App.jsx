@@ -15,6 +15,7 @@ import SalesHistory from './components/SalesHistory';
 import Expenses from './components/Expenses';
 import CashSessions from './components/CashSessions';
 import PurchaseOrders from './components/PurchaseOrders';
+import Archives from './components/Archives';
 import ProductModal from './components/ProductModal';
 import RepairModal from './components/RepairModal';
 import ExpenseModal from './components/ExpenseModal';
@@ -177,6 +178,10 @@ function MainShopApp() {
 
           {currentTab === 'clients' && (
             <ClientsView />
+          )}
+
+          {currentTab === 'archives' && (
+            <Archives onSelectRepair={handleEditRepair} />
           )}
         </main>
       </div>

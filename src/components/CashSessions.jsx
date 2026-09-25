@@ -215,8 +215,8 @@ export default function CashSessions() {
       }
     }
 
-    // Process all sales
-    (sales || []).forEach((s) => {
+    // Process all sales (excluding archived)
+    (sales || []).filter((s) => !s.archived).forEach((s) => {
       if (!s.date) return;
       const dateKey = getLocalDateKey(s.date);
       if (!dateKey) return;
@@ -254,8 +254,8 @@ export default function CashSessions() {
       }
     });
 
-    // Process expenses
-    (expenses || []).forEach((e) => {
+    // Process expenses (excluding archived)
+    (expenses || []).filter((e) => !e.archived).forEach((e) => {
       if (!e.date) return;
       const dateKey = getLocalDateKey(e.date);
       if (!dateKey) return;
@@ -282,9 +282,9 @@ export default function CashSessions() {
       }
     });
 
-    // Process credit payments (collected client debts)
+    // Process credit payments (collected client debts, excluding archived)
     (clients || []).forEach((c) => {
-      (c.history || []).forEach((trx) => {
+      (c.history || []).filter((trx) => !trx.archived).forEach((trx) => {
         const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
         if (isPayment && trx.date) {
           const dateKey = getLocalDateKey(trx.date);
@@ -316,8 +316,8 @@ export default function CashSessions() {
       });
     });
 
-    // Process repairs (harmonized with Dashboard & SalesHistory)
-    (repairs || []).forEach((rep) => {
+    // Process repairs (harmonized with Dashboard & SalesHistory, excluding archived)
+    (repairs || []).filter((r) => !r.archived).forEach((rep) => {
       const isDelivered = rep.status === 'delivered';
       const advance = Number(rep.advancePaid || rep.deposit || 0);
       const remainingDue = Number(rep.remainingDue || 0);
@@ -412,7 +412,7 @@ export default function CashSessions() {
       else if (r.netProfit < 0) lossDaysCount++;
     });
 
-    // Granted credits in active period (matching Dashboard)
+    // Granted credits in active period (matching Dashboard, excluding archived)
     const activeDateKeys = new Set(dailyRecords.map((r) => r.dateKey));
     let totalGrantedCredit = 0;
     let grantedCreditCount = 0;
@@ -420,7 +420,7 @@ export default function CashSessions() {
     const seenTrxKeys = new Set();
 
     // 1. Sales in period with remaining credit
-    (sales || []).forEach((s) => {
+    (sales || []).filter((s) => !s.archived).forEach((s) => {
       if (s.date && activeDateKeys.has(getLocalDateKey(s.date))) {
         const debt = Number(s.remainingCredit || s.remainingDebt || 0);
         if (debt > 0) {
@@ -432,8 +432,8 @@ export default function CashSessions() {
       }
     });
 
-    // 2. Repairs in period with remaining due
-    (repairs || []).forEach((r) => {
+    // 2. Repairs in period with remaining due (excluding archived)
+    (repairs || []).filter((r) => !r.archived).forEach((r) => {
       const effKey = getLocalDateKey(r.deliveredAt || r.createdAt);
       if (effKey && activeDateKeys.has(effKey)) {
         const debt = Number(r.remainingDue || 0);

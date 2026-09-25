@@ -41,9 +41,10 @@ export default function ClientModal({ client, transaction, onClose }) {
   const [debtAmount, setDebtAmount] = useState('0');
   const [loyaltyPoints, setLoyaltyPoints] = useState('0');
   const [customDiscountPercent, setCustomDiscountPercent] = useState('0');
-  const [isLoyaltyClient, setIsLoyaltyClient] = useState(true);
+  const [isLoyaltyClient, setIsLoyaltyClient] = useState(false);
   const [notes, setNotes] = useState('');
   const [adjustmentNote, setAdjustmentNote] = useState('');
+  const [createdAt, setCreatedAt] = useState(() => new Date().toISOString().split('T')[0]);
 
   // Form states for Transaction Edit
   const [trxDate, setTrxDate] = useState('');
@@ -71,9 +72,11 @@ export default function ClientModal({ client, transaction, onClose }) {
       setDebtAmount(client.totalDebt !== undefined ? String(client.totalDebt) : '0');
       setLoyaltyPoints(client.loyaltyPoints !== undefined ? String(client.loyaltyPoints) : '0');
       setCustomDiscountPercent(client.customDiscountPercent !== undefined ? String(client.customDiscountPercent) : '0');
-      setIsLoyaltyClient(client.isLoyaltyClient !== undefined ? Boolean(client.isLoyaltyClient) : true);
+      const hasLoyaltyData = (Number(client.loyaltyPoints) > 0) || (Number(client.customDiscountPercent) > 0);
+      setIsLoyaltyClient(Boolean(client.isLoyaltyClient && hasLoyaltyData));
       setNotes(client.notes || '');
       setAdjustmentNote('');
+      setCreatedAt(client.createdAt ? client.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]);
     } else {
       setName('');
       setPhone('');
@@ -82,9 +85,10 @@ export default function ClientModal({ client, transaction, onClose }) {
       setDebtAmount('0');
       setLoyaltyPoints('0');
       setCustomDiscountPercent('0');
-      setIsLoyaltyClient(true);
+      setIsLoyaltyClient(false);
       setNotes('');
       setAdjustmentNote('');
+      setCreatedAt(new Date().toISOString().split('T')[0]);
     }
   }, [client, transaction]);
 
@@ -132,6 +136,7 @@ export default function ClientModal({ client, transaction, onClose }) {
         loyaltyPoints: numPoints,
         customDiscountPercent: numDiscount,
         isLoyaltyClient,
+        createdAt: createdAt ? new Date(createdAt + 'T12:00:00').toISOString() : (client.createdAt || new Date().toISOString()),
         adjustmentNote: adjustmentNote.trim(),
       });
       toast.success(t('clientUpdatedSuccess'));
@@ -146,6 +151,7 @@ export default function ClientModal({ client, transaction, onClose }) {
         loyaltyPoints: numPoints,
         customDiscountPercent: numDiscount,
         isLoyaltyClient,
+        createdAt: createdAt ? new Date(createdAt + 'T12:00:00').toISOString() : new Date().toISOString(),
       });
       toast.success(t('clientCreatedSuccess'));
     }
@@ -255,8 +261,36 @@ export default function ClientModal({ client, transaction, onClose }) {
                 </div>
               </>
             ) : (
-              /* CLIENT EDIT / CREATE MODE */
               <>
+                {/* Client Creation Date Summary Info Badge */}
+                {isClientEdit && (
+                  <div
+                    style={{
+                      background: 'rgba(99, 102, 241, 0.08)',
+                      border: '1px solid rgba(99, 102, 241, 0.2)',
+                      borderRadius: '10px',
+                      padding: '0.6rem 0.85rem',
+                      fontSize: '0.8rem',
+                      color: 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Calendar size={15} style={{ color: 'var(--accent-primary)' }} />
+                      <span>{lang === 'ar' ? 'تاريخ تسجيل الحريف :' : "Date d'enregistrement de la fiche :"} <strong style={{ color: 'var(--text-primary)' }}>{client?.createdAt ? new Date(client.createdAt).toLocaleDateString(lang === 'ar' ? 'ar-TN' : 'fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</strong></span>
+                    </span>
+                    {client?.history && client.history.length > 0 && (
+                      <span className="badge badge-purple" style={{ fontSize: '0.7rem' }}>
+                        {client.history.length} {lang === 'ar' ? 'معاملة مسجلة' : 'opération(s)'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -292,6 +326,19 @@ export default function ClientModal({ client, transaction, onClose }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Calendar size={15} className="text-primary" />
+                      <span>{lang === 'ar' ? 'تاريخ الفيش / التسجيل' : "Date de la fiche client"}</span>
+                    </label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={createdAt}
+                      onChange={(e) => setCreatedAt(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <Mail size={15} className="text-primary" />
                       <span>{t('email')}</span>
                     </label>
@@ -303,20 +350,20 @@ export default function ClientModal({ client, transaction, onClose }) {
                       onChange={(e) => setEmail(e.target.value)}
                     />
                   </div>
+                </div>
 
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <MapPin size={15} className="text-primary" />
-                      <span>{t('address')}</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Ex: Tunis, Centre-ville"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                    />
-                  </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <MapPin size={15} className="text-primary" />
+                    <span>{t('address')}</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Ex: Tunis, Centre-ville"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                  />
                 </div>
 
                 {/* Loyalty & Discount Settings */}

@@ -340,24 +340,6 @@ export default function SettingsView({ initialTab = 'shop' }) {
                   <span>☀️</span>
                   <span>{t('themeLight')}</span>
                 </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${theme === 'cyber' ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setTheme('cyber')}
-                  style={{ justifyContent: 'center' }}
-                >
-                  <span>🔮</span>
-                  <span>{t('themeCyber')}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${theme === 'emerald' ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setTheme('emerald')}
-                  style={{ justifyContent: 'center' }}
-                >
-                  <span>🌿</span>
-                  <span>{t('themeEmerald')}</span>
-                </button>
               </div>
             </div>
 

@@ -19,6 +19,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Archive,
 } from 'lucide-react';
 import ClientModal from './ClientModal';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
@@ -31,8 +32,10 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
     formatMoney,
     deleteClient,
     deleteClientTransaction,
+    archiveCreditTransaction,
     t,
     lang,
+    isRTL,
     settings,
   } = useApp();
 
@@ -41,6 +44,16 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
   const [filterMode, setFilterMode] = useState('with_debt'); // 'with_debt', 'all', 'settled'
   const [dateFilter, setDateFilter] = useState('all'); // 'all', 'today', 'yesterday', '7d', '30d', 'custom'
   const [customDate, setCustomDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  // Format date display for date picker pill
+  const formattedCustomDate = useMemo(() => {
+    if (!customDate) return '';
+    const parts = customDate.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return customDate;
+  }, [customDate]);
 
   // Export State (Excel, CSV, TXT)
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -130,7 +143,7 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
       if (Array.isArray(c.history)) {
         c.history.forEach((trx, idx) => {
           if (periodBounds.isInPeriod(trx.date)) {
-            const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
+            const isPayment = !trx.archived && (Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement');
             const amt = Math.abs(Number(trx.amount) || 0);
             const dateMin = trx.date ? trx.date.substring(0, 16) : '';
             const refKey = trx.referenceId ? `ref:${trx.referenceId}:${trx.type}` : null;
@@ -150,7 +163,7 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
                   paidAmount: amt,
                 });
               }
-            } else {
+            } else if (!trx.archived) {
               if (!seenDebt.has(dedupeKey)) {
                 seenDebt.add(dedupeKey);
                 newDebtAmount += Number(trx.amount) || 0;
@@ -325,7 +338,7 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
 
       clients.forEach((c) => {
         (c.history || []).forEach((trx) => {
-          if (trx.date && getLocalDateKey(trx.date) === targetDate) {
+          if (!trx.archived && trx.date && getLocalDateKey(trx.date) === targetDate) {
             const isPayment = Number(trx.amount) < 0 || trx.type === 'payment' || trx.type === 'repair_payment' || trx.type === 'settlement';
             const amt = Math.abs(Number(trx.amount) || 0);
             if (isPayment) {
@@ -973,120 +986,150 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
         </div>
       </div>
 
-      {/* Filter Toolbar: Search + Period Selector + Debt Status Filter */}
+      {/* Filter Toolbar: Row 1 (Modes & Dates) + Row 2 (Search & Counts) */}
       <div
         className="ui-card"
         style={{
-          padding: '0.85rem 1rem',
+          padding: '1rem 1.15rem',
           display: 'flex',
-          flexWrap: 'wrap',
+          flexDirection: 'column',
           gap: '0.85rem',
-          alignItems: 'center',
-          justifyContent: 'space-between',
         }}
       >
-        {/* Search */}
-        <div style={{ position: 'relative', minWidth: '240px', flex: '1 1 240px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-          <input
-            type="text"
-            className="input"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={filterMode === 'collected' ? 'Rechercher par client, tél ou note...' : t('creditsSearchPlaceholder')}
-            style={{ paddingLeft: '2.1rem', width: '100%' }}
-          />
-        </div>
-
-        {/* Period Selector Tabs */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem' }}>
-          <button
-            className={`btn btn-sm ${dateFilter === 'all' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('all')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('allDates')}
-          </button>
-          <button
-            className={`btn btn-sm ${dateFilter === 'today' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('today')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('periodToday')}
-          </button>
-          <button
-            className={`btn btn-sm ${dateFilter === 'yesterday' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('yesterday')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('periodYesterday')}
-          </button>
-          <button
-            className={`btn btn-sm ${dateFilter === '7d' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('7d')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('period7d')}
-          </button>
-          <button
-            className={`btn btn-sm ${dateFilter === '30d' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setDateFilter('30d')}
-            style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
-          >
-            {t('period30d')}
-          </button>
-
-          {/* Date Picker Button / Input */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+        {/* Row 1: Mode Filter Pills (Left) + Period Filter Pills with Date Picker (Right) */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.85rem', flexWrap: 'wrap' }}>
+          
+          {/* Mode Switcher Pills */}
+          <div className="dash-period-pill-group">
             <button
-              className={`btn btn-sm ${dateFilter === 'custom' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setDateFilter('custom')}
-              style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+              type="button"
+              className={`dash-period-btn ${filterMode === 'with_debt' ? 'active' : ''}`}
+              onClick={() => setFilterMode('with_debt')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
             >
-              <Calendar size={13} />
-              {t('periodCustom')}
+              <span>{t('totalDebtors')}</span>
+              <span className="badge badge-red" style={{ fontSize: '0.65rem', padding: '0.05rem 0.35rem' }}>
+                {clientsWithDebt.length}
+              </span>
             </button>
-            {dateFilter === 'custom' && (
+
+            <button
+              type="button"
+              className={`dash-period-btn ${filterMode === 'collected' ? 'active' : ''}`}
+              onClick={() => setFilterMode('collected')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <HandCoins size={13} style={{ color: filterMode === 'collected' ? '#000' : '#10b981' }} />
+              <span>{t('collectedCreditPeriod') || 'Crédits Collectés'}</span>
+              <span className="badge badge-green" style={{ fontSize: '0.65rem', padding: '0.05rem 0.35rem' }}>
+                {periodStats.collectedList.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={`dash-period-btn ${filterMode === 'all' ? 'active' : ''}`}
+              onClick={() => setFilterMode('all')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <span>{t('all')}</span>
+              <span className="badge badge-purple" style={{ fontSize: '0.65rem', padding: '0.05rem 0.35rem' }}>
+                {clients.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Date Filter Pills + Date Picker */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
+            <div className="dash-period-pill-group">
+              <button
+                type="button"
+                className={`dash-period-btn ${dateFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setDateFilter('all')}
+              >
+                {t('allDates')}
+              </button>
+              <button
+                type="button"
+                className={`dash-period-btn ${dateFilter === 'today' ? 'active' : ''}`}
+                onClick={() => setDateFilter('today')}
+              >
+                {t('periodToday')}
+              </button>
+              <button
+                type="button"
+                className={`dash-period-btn ${dateFilter === 'yesterday' ? 'active' : ''}`}
+                onClick={() => setDateFilter('yesterday')}
+              >
+                {t('periodYesterday')}
+              </button>
+              <button
+                type="button"
+                className={`dash-period-btn ${dateFilter === '7d' ? 'active' : ''}`}
+                onClick={() => setDateFilter('7d')}
+              >
+                {t('period7d')}
+              </button>
+              <button
+                type="button"
+                className={`dash-period-btn ${dateFilter === '30d' ? 'active' : ''}`}
+                onClick={() => setDateFilter('30d')}
+              >
+                {t('period30d')}
+              </button>
+            </div>
+
+            {/* Custom Date Picker Pill */}
+            <div className="dash-date-picker-wrap">
+              <Calendar size={14} style={{ color: 'var(--accent-primary)' }} />
+              <span>{formattedCustomDate}</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▾</span>
               <input
                 type="date"
-                className="input"
                 value={customDate}
-                onChange={(e) => setCustomDate(e.target.value)}
-                style={{ padding: '0.25rem 0.5rem', fontSize: '0.78rem', width: 'auto' }}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setCustomDate(e.target.value);
+                    setDateFilter('custom');
+                  }
+                }}
               />
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Debt Status Mode */}
-        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-          <button
-            className={`btn btn-sm ${filterMode === 'with_debt' ? 'btn-secondary' : 'btn-ghost'}`}
-            onClick={() => setFilterMode('with_debt')}
-            style={{ fontSize: '0.78rem', fontWeight: filterMode === 'with_debt' ? 700 : 500 }}
-          >
-            {t('totalDebtors')} ({clientsWithDebt.length})
-          </button>
-          <button
-            className={`btn btn-sm ${filterMode === 'collected' ? 'btn-secondary' : 'btn-ghost'}`}
-            onClick={() => setFilterMode('collected')}
-            style={{
-              fontSize: '0.78rem',
-              fontWeight: filterMode === 'collected' ? 700 : 500,
-              color: filterMode === 'collected' ? '#10b981' : undefined,
-              borderColor: filterMode === 'collected' ? '#10b981' : undefined,
-            }}
-          >
-            <HandCoins size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-            {t('collectedCreditPeriod') || 'Crédits Collectés'} ({periodStats.collectedList.length})
-          </button>
-          <button
-            className={`btn btn-sm ${filterMode === 'all' ? 'btn-secondary' : 'btn-ghost'}`}
-            onClick={() => setFilterMode('all')}
-            style={{ fontSize: '0.78rem', fontWeight: filterMode === 'all' ? 700 : 500 }}
-          >
-            {t('all')} ({clients.length})
-          </button>
+        {/* Row 2: Search Input + Status indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: '1 1 280px' }}>
+            <Search
+              size={16}
+              style={{
+                position: 'absolute',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                [isRTL ? 'right' : 'left']: '12px',
+                color: 'var(--text-muted)',
+              }}
+            />
+            <input
+              type="text"
+              className="form-input"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={filterMode === 'collected' ? 'Rechercher par client, téléphone ou note...' : t('creditsSearchPlaceholder')}
+              style={{
+                [isRTL ? 'paddingRight' : 'paddingLeft']: '38px',
+                width: '100%',
+              }}
+            />
+          </div>
+
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap' }}>
+            <span>Affichage :</span>
+            <strong style={{ color: 'var(--text-primary)' }}>
+              {filterMode === 'collected' ? filteredCollectedList.length : filteredClients.length} résultat(s)
+            </strong>
+          </div>
         </div>
       </div>
 
@@ -1457,6 +1500,24 @@ export default function Credits({ onOpenPaymentModal, onPayCredit }) {
 
                         {/* Inline Actions for Transaction */}
                         <div style={{ display: 'flex', gap: '0.25rem' }}>
+                          {isPayment && !trx.archived && (
+                            <button
+                              className="btn-icon btn-secondary btn-xs"
+                              title={t('archiveItem') || 'Archiver ce règlement'}
+                              onClick={() => {
+                                const res = archiveCreditTransaction(selectedClient.id, trx.id);
+                                if (res.success) {
+                                  toast.success(lang === 'ar' ? 'تمت أرشفة حركة السداد بنجاح' : 'Règlement archivé avec succès !');
+                                } else {
+                                  toast.error(res.error);
+                                }
+                              }}
+                              style={{ padding: '4px', width: '24px', height: '24px' }}
+                            >
+                              <Archive size={12} />
+                            </button>
+                          )}
+
                           <button
                             className="btn-icon btn-secondary btn-xs"
                             onClick={() =>

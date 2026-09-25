@@ -33,12 +33,14 @@ import {
   AlertTriangle,
   Lock,
   Unlock,
+  Archive,
 } from 'lucide-react';
 
 export default function Expenses({ onOpenNewExpense, onEditExpense }) {
   const {
     expenses,
     deleteExpense,
+    archiveExpense,
     cashSessions,
     deleteCashSession,
     currentSession,
@@ -158,9 +160,9 @@ export default function Expenses({ onOpenNewExpense, onEditExpense }) {
     other: { label: t('catOther') || 'Autre', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)' },
   };
 
-  // Filter expenses
+  // Filter expenses (Active only, excluding archived)
   const filteredExpenses = useMemo(() => {
-    return (expenses || []).filter((exp) => {
+    return (expenses || []).filter((exp) => !exp.archived).filter((exp) => {
       if (!periodBounds.isInPeriod(exp.date)) {
         return false;
       }
@@ -320,7 +322,7 @@ export default function Expenses({ onOpenNewExpense, onEditExpense }) {
         >
           <Receipt size={16} />
           <span>{t('tabExpensesList')}</span>
-          <span className="badge badge-red" style={{ fontSize: '0.65rem' }}>{expenses.length}</span>
+          <span className="badge badge-red" style={{ fontSize: '0.65rem' }}>{(expenses || []).filter((e) => !e.archived).length}</span>
         </button>
 
         <button
@@ -978,6 +980,17 @@ export default function Expenses({ onOpenNewExpense, onEditExpense }) {
                           {isAdmin && (
                             <td style={{ textAlign: 'center' }}>
                               <div style={{ display: 'flex', justifyContent: 'center', gap: '0.4rem' }}>
+                                <button
+                                  type="button"
+                                  className="btn-icon btn-outline btn-sm"
+                                  title={t('archiveItem') || 'Archiver cette dépense'}
+                                  onClick={() => {
+                                    archiveExpense(exp.id);
+                                    toast.success(lang === 'ar' ? 'تمت أرشفة المصروف بنجاح' : 'Dépense archivée avec succès !');
+                                  }}
+                                >
+                                  <Archive size={14} />
+                                </button>
                                 <button
                                   type="button"
                                   className="btn-icon btn-outline btn-sm"
