@@ -235,7 +235,7 @@ export default function ImportLowStockModal({ open, onClose }) {
         supplier: p.supplier || '',
         stock: currentStock,
         minStockAlert: threshold,
-        notes: `Alerte stock : Stock restant (${currentStock}) / Seuil min (${threshold})`,
+        notes: '',
       };
     });
 

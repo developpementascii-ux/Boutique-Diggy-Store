@@ -403,7 +403,10 @@ export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
             details.push(`Demande Client : ${po.clientName || 'Client'}${po.clientPhone ? ` (Tél : ${po.clientPhone})` : ''}`);
           }
           if (po.notes) {
-            details.push(`Note : ${po.notes}`);
+            const isStockAlertNote = /alerte stock|stock restant|généré (depuis|automatiquement)/i.test(po.notes);
+            if (!isStockAlertNote) {
+              details.push(`Note : ${po.notes}`);
+            }
           }
 
           if (details.length > 0) {
@@ -915,7 +918,7 @@ export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
                             </div>
                           )}
 
-                          {po.notes && (
+                          {po.notes && !/alerte stock|stock restant|généré (depuis|automatiquement)/i.test(po.notes) && (
                             <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem', maxWidth: '280px' }}>
                               {po.notes}
                             </div>
@@ -1174,7 +1177,7 @@ export default function PurchaseOrders({ onOpenNewOrder, onEditOrder }) {
                       )}
 
                       {/* Notes / Technical Specs */}
-                      {po.notes && (
+                      {po.notes && !/alerte stock|stock restant|généré (depuis|automatiquement)/i.test(po.notes) && (
                         <div
                           style={{
                             background: 'var(--bg-secondary)',
