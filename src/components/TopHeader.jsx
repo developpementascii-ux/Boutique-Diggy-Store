@@ -42,6 +42,7 @@ export default function TopHeader() {
     logout,
     isAdmin,
     isRTL,
+    setInventorySearchQuery,
   } = useApp();
 
   // Search State
@@ -201,6 +202,19 @@ export default function TopHeader() {
                 setIsSearchOpen(true);
               }}
               onFocus={() => setIsSearchOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchQuery.trim()) {
+                  e.preventDefault();
+                  const q = searchQuery.trim();
+                  if (searchResults.products.length > 0) {
+                    if (setInventorySearchQuery) setInventorySearchQuery(searchResults.products[0].name);
+                  } else {
+                    if (setInventorySearchQuery) setInventorySearchQuery(q);
+                  }
+                  setCurrentTab('inventory');
+                  setIsSearchOpen(false);
+                }
+              }}
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -287,17 +301,30 @@ export default function TopHeader() {
                           padding: '0.2rem 0.4rem',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '0.35rem',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
                         }}
+                        onClick={() => {
+                          if (setInventorySearchQuery) setInventorySearchQuery(searchQuery.trim());
+                          setCurrentTab('inventory');
+                          setIsSearchOpen(false);
+                        }}
+                        title="Ouvrir tous les résultats dans Stock & Produits"
                       >
-                        <Package size={13} />
-                        <span>{t('navInventory') || 'Produits'} ({searchResults.products.length})</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <Package size={13} />
+                          <span>{t('navInventory') || 'Produits'} ({searchResults.products.length})</span>
+                        </div>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', textDecoration: 'underline' }}>
+                          Voir tout dans Stock →
+                        </span>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.2rem' }}>
                         {searchResults.products.map((p) => (
                           <div
                             key={p.id}
                             onClick={() => {
+                              if (setInventorySearchQuery) setInventorySearchQuery(p.name);
                               setCurrentTab('inventory');
                               setIsSearchOpen(false);
                             }}

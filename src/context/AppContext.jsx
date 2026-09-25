@@ -265,6 +265,7 @@ export function AppProvider({ children }) {
   // Navigation & UI State
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [globalSearch, setGlobalSearch] = useState('');
+  const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [activeReceipt, setActiveReceipt] = useState(null);
 
   // --- STATE MUTATION HELPERS WITH DUAL STORAGE & BROADCAST SYNC ---
@@ -2627,6 +2628,8 @@ export function AppProvider({ children }) {
         setCurrentTab,
         globalSearch,
         setGlobalSearch,
+        inventorySearchQuery,
+        setInventorySearchQuery,
         activeReceipt,
         setActiveReceipt,
 

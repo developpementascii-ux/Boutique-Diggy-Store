@@ -18,6 +18,7 @@ import {
   LayoutList,
   ChevronDown,
   FileText,
+  X,
 } from 'lucide-react';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
 
@@ -33,11 +34,13 @@ export default function Inventory({ onOpenNewProduct, onEditProduct }) {
     t,
     lang,
     isAdmin,
+    inventorySearchQuery,
+    setInventorySearchQuery,
   } = useApp();
 
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubCategory, setSelectedSubCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(inventorySearchQuery || '');
   const [onlyLowStock, setOnlyLowStock] = useState(false);
   const [viewMode, setViewMode] = useState(() => {
     try {
@@ -48,6 +51,17 @@ export default function Inventory({ onOpenNewProduct, onEditProduct }) {
   }); // 'table' | 'cards'
   const [hoveredCategory, setHoveredCategory] = useState(null);
   const [deleteProductModal, setDeleteProductModal] = useState({ open: false, product: null });
+
+  // Sync with global header search query when navigated to inventory
+  useEffect(() => {
+    if (inventorySearchQuery !== undefined && inventorySearchQuery !== null) {
+      setSearchQuery(inventorySearchQuery);
+      if (inventorySearchQuery.trim()) {
+        setSelectedCategory('all');
+        setSelectedSubCategory('all');
+      }
+    }
+  }, [inventorySearchQuery]);
 
   // Persist view mode preference across visits
   useEffect(() => {
@@ -280,15 +294,46 @@ export default function Inventory({ onOpenNewProduct, onEditProduct }) {
       >
         {/* Search, Low Stock, and View Mode Switcher */}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="input-with-icon" style={{ flex: 1, minWidth: '240px' }}>
+          <div className="input-with-icon" style={{ flex: 1, minWidth: '240px', position: 'relative' }}>
             <Search size={16} />
             <input
               type="text"
               className="form-input"
+              style={{ paddingRight: searchQuery ? '2rem' : undefined }}
               placeholder={t('inventorySearchPlaceholder')}
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchQuery(val);
+                if (setInventorySearchQuery) setInventorySearchQuery(val);
+              }}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  if (setInventorySearchQuery) setInventorySearchQuery('');
+                }}
+                style={{
+                  position: 'absolute',
+                  right: '0.65rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                title="Effacer la recherche"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
           <button
